@@ -11,3 +11,5 @@ docs/_scratch/
 .mypy_cache/
 
 *.log
+
+.env

@@ -109,10 +109,25 @@ class LinkedInDiscoveryPaginatedSpider(scrapy.Spider):
 
     def parse_page(self, response: scrapy.http.Response, *, search: dict[str, Any], start: int):
         sid = str(search["search_definition_id"])
+        search_run_id = search.get("search_run_id")
         self._pages_fetched[sid] += 1
 
+        fetched_at = datetime.now(timezone.utc).isoformat()
         if _looks_blocked(response):
             self._block_streak[sid] += 1
+            yield {
+                "record_type": "page_fetch",
+                "crawl_run_id": self.crawl_run_id,
+                "search_definition_id": sid,
+                "search_run_id": search_run_id,
+                "search_name": search.get("name"),
+                "page_start": start,
+                "status_code": response.status,
+                "blocked": True,
+                "item_count": 0,
+                "fetched_at": fetched_at,
+                "url": response.url,
+            }
             if self._block_streak[sid] >= self._b["CIRCUIT_BREAKER_BLOCKS"]:
                 self._blocked[sid] = True
                 self.logger.error("Blocked detected for search %s; stopping (circuit breaker).", sid)
@@ -121,11 +136,24 @@ class LinkedInDiscoveryPaginatedSpider(scrapy.Spider):
         self._block_streak[sid] = 0
 
         items = parse_see_more_fragment(response.text, search_url=response.url)
+        yield {
+            "record_type": "page_fetch",
+            "crawl_run_id": self.crawl_run_id,
+            "search_definition_id": sid,
+            "search_run_id": search_run_id,
+            "search_name": search.get("name"),
+            "page_start": start,
+            "status_code": response.status,
+            "blocked": False,
+            "item_count": len(items),
+            "fetched_at": fetched_at,
+            "url": response.url,
+        }
         if not items:
             return
 
-        scraped_at = datetime.now(timezone.utc).isoformat()
-        page_job_ids = [it["job_id"] for it in items if it.get("job_id")]
+        scraped_at = fetched_at
+        page_job_ids = [it.get("job_id") for it in items if it.get("job_id")]
         new_count = 0
 
         for rank, it in enumerate(items):
@@ -143,6 +171,7 @@ class LinkedInDiscoveryPaginatedSpider(scrapy.Spider):
                 "record_type": "job_discovered",
                 "crawl_run_id": self.crawl_run_id,
                 "search_definition_id": sid,
+                "search_run_id": search_run_id,
                 "search_name": search.get("name"),
                 "source": "linkedin",
                 "job_id": job_id,
@@ -159,7 +188,7 @@ class LinkedInDiscoveryPaginatedSpider(scrapy.Spider):
             self._dup_pages[sid] = 0
 
         # Next offset: LinkedIn typically returns 10 results per fragment, but use actual count.
-        next_start = start + len(page_job_ids)
+        next_start = start + len(items)
         yield from self._schedule_page(search, start=next_start)
 
     def closed(self, reason: str):
