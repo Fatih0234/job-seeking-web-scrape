@@ -10,6 +10,8 @@ linkedin:
           # location: "Germany"
           cities:
             mode: country_only
+            # mode: list
+            # names: ["Berlin", "Munich"]
 
       # Filters are specified by human labels, and mapped to LinkedIn codes
       # dynamically by parsing the LinkedIn jobs search page HTML.
@@ -18,4 +20,3 @@ linkedin:
         job_type: ["Full-time"]         # f_JT
         experience_level: []            # f_E
         remote: []                      # f_WT
-

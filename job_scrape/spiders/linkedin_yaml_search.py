@@ -46,17 +46,40 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
         self._search_queue: list[tuple[LinkedInSearchSpec, dict[str, str]]] = []
 
     async def start(self):
-        # 1) Resolve missing country geoIds (via typeahead).
+        # 1) Resolve missing geo IDs (countries + optional city facets) via typeahead.
         for search in self.cfg.searches:
             for country in search.countries:
                 if country.geo_id:
-                    continue
-                key = f"COUNTRY_REGION::{country.name}"
-                if key in self._geo:
-                    continue
-                url = build_typeahead_url(geo_types="COUNTRY_REGION", query=country.name)
-                self._pending_typeahead.add(key)
-                yield scrapy.Request(url, callback=self._parse_country_typeahead, cb_kwargs={"cache_key": key, "country_name": country.name})
+                    pass
+                else:
+                    key = f"COUNTRY_REGION::{country.name}"
+                    if key not in self._geo:
+                        url = build_typeahead_url(geo_types="COUNTRY_REGION", query=country.name)
+                        self._pending_typeahead.add(key)
+                        yield scrapy.Request(
+                            url,
+                            callback=self._parse_geo_typeahead,
+                            cb_kwargs={
+                                "cache_key": key,
+                                "prefer_suffix": country.name,
+                            },
+                        )
+
+                if country.cities_mode == "list" and country.cities:
+                    for city in country.cities:
+                        ckey = f"POPULATED_PLACE::{country.name}::{city}"
+                        if ckey in self._geo:
+                            continue
+                        url = build_typeahead_url(geo_types="POPULATED_PLACE", query=city)
+                        self._pending_typeahead.add(ckey)
+                        yield scrapy.Request(
+                            url,
+                            callback=self._parse_geo_typeahead,
+                            cb_kwargs={
+                                "cache_key": ckey,
+                                "prefer_suffix": country.name,
+                            },
+                        )
 
         # If we emitted requests above, wait for callbacks to schedule the rest.
         if self._pending_typeahead:
@@ -66,12 +89,12 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
         for req in self._after_geo_resolution():
             yield req
 
-    def _parse_country_typeahead(self, response: scrapy.http.Response, *, cache_key: str, country_name: str):
+    def _parse_geo_typeahead(self, response: scrapy.http.Response, *, cache_key: str, prefer_suffix: str):
         try:
             hits = json.loads(response.text)
-            best = pick_best_geo_hit(hits, prefer_suffix=country_name)
+            best = pick_best_geo_hit(hits, prefer_suffix=prefer_suffix)
             if not best or not best.id:
-                raise ValueError(f"No typeahead hits for country '{country_name}'")
+                raise ValueError(f"No typeahead hits for '{cache_key}'")
             self._geo[cache_key] = {"id": best.id, "displayName": best.display_name, "type": best.type}
         finally:
             self._pending_typeahead.discard(cache_key)
@@ -89,26 +112,35 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
                     raise ValueError(f"Could not resolve geoId for country '{country.name}'")
 
                 facet_key = f"facets::{geo_id}"
-                if facet_key in self._facet_maps:
-                    continue
+                if facet_key not in self._facet_maps:
+                    url = self._build_search_url(
+                        keywords=search.keywords,
+                        location=country.location or country.name,
+                        geo_id=geo_id,
+                        page_num=0,
+                        facets={},  # no filters, we just want the available options
+                    )
+                    self._pending_facet_pages.add(facet_key)
+                    yield scrapy.Request(
+                        url,
+                        callback=self._parse_facets_page,
+                        cb_kwargs={"facet_key": facet_key, "country_geo_id": geo_id},
+                        dont_filter=True,
+                    )
 
-                url = self._build_search_url(
-                    keywords=search.keywords,
-                    location=country.location or country.name,
-                    geo_id=geo_id,
-                    page_num=0,
-                    facets={},  # no filters, we just want the available options
+                # Queue actual searches to run (after facets are available).
+                self._search_queue.append(
+                    (
+                        search,
+                        {
+                            "country": country.name,
+                            "geo_id": geo_id,
+                            "location": country.location or country.name,
+                            "cities_mode": country.cities_mode,
+                            "cities": list(country.cities),
+                        },
+                    )
                 )
-                self._pending_facet_pages.add(facet_key)
-                yield scrapy.Request(
-                    url,
-                    callback=self._parse_facets_page,
-                    cb_kwargs={"facet_key": facet_key, "country_geo_id": geo_id},
-                    dont_filter=True,
-                )
-
-                # Queue actual searches to run later.
-                self._search_queue.append((search, {"country": country.name, "geo_id": geo_id, "location": country.location or country.name}))
 
         if self._pending_facet_pages:
             return
@@ -153,15 +185,39 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
             if wt:
                 facets["f_WT"] = wt
 
-            url = self._build_search_url(
-                keywords=search.keywords,
-                location=ctx["location"],
-                geo_id=geo_id,
-                page_num=0,
-                facets=facets,
-            )
+            cities_mode = ctx.get("cities_mode", "country_only")
+            cities = ctx.get("cities") or []
 
-            yield scrapy.Request(url, callback=self.parse_search, cb_kwargs={"search_name": search.name}, dont_filter=True)
+            if cities_mode == "list" and cities:
+                for city in cities:
+                    ckey = f"POPULATED_PLACE::{ctx['country']}::{city}"
+                    city_id = self._geo.get(ckey, {}).get("id")
+                    if not city_id:
+                        raise ValueError(f"Could not resolve city id for '{city}' in '{ctx['country']}'")
+                    facets_with_city = dict(facets)
+                    facets_with_city["f_PP"] = city_id
+                    url = self._build_search_url(
+                        keywords=search.keywords,
+                        location=ctx["location"],
+                        geo_id=geo_id,
+                        page_num=0,
+                        facets=facets_with_city,
+                    )
+                    yield scrapy.Request(
+                        url,
+                        callback=self.parse_search,
+                        cb_kwargs={"search_name": f"{search.name}__{city}"},
+                        dont_filter=True,
+                    )
+            else:
+                url = self._build_search_url(
+                    keywords=search.keywords,
+                    location=ctx["location"],
+                    geo_id=geo_id,
+                    page_num=0,
+                    facets=facets,
+                )
+                yield scrapy.Request(url, callback=self.parse_search, cb_kwargs={"search_name": search.name}, dont_filter=True)
 
         # Avoid re-running if callbacks fire again.
         self._search_queue = []
