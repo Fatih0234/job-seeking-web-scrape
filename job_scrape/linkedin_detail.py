@@ -40,6 +40,7 @@ def parse_job_detail(html: str) -> dict[str, Any]:
     - company_name
     - job_location
     - posted_time_ago
+    - job_description
     - criteria: {seniority_level, employment_type, job_function, industries}
     """
     sel = Selector(text=html)
@@ -62,6 +63,11 @@ def parse_job_detail(html: str) -> dict[str, Any]:
     job_location = _text(sel.css(".topcard__flavor-row .topcard__flavor--bullet"))
 
     posted_time_ago = _text(sel.css("span.posted-time-ago__text"))
+
+    # Description
+    job_description = _text(sel.css("div.description__text--rich div.show-more-less-html__markup"))
+    if not job_description:
+        job_description = _text(sel.css("div.description__text--rich"))
 
     criteria = {
         "seniority_level": None,
@@ -97,5 +103,6 @@ def parse_job_detail(html: str) -> dict[str, Any]:
         "company_name": company_name,
         "job_location": job_location,
         "posted_time_ago": posted_time_ago,
+        "job_description": job_description,
         "criteria": criteria,
     }

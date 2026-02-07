@@ -100,6 +100,7 @@ class LinkedInFirstJobDetailSpider(scrapy.Spider):
             "company_name": d.get("company_name"),
             "job_location": d.get("job_location"),
             "posted_time_ago": d.get("posted_time_ago"),
+            "job_description": d.get("job_description"),
             "criteria": d.get("criteria"),
         }
         yield out

@@ -14,6 +14,8 @@ class TestLinkedInDetailExtract(unittest.TestCase):
         self.assertEqual(d["company_name"], "Cint")
         self.assertEqual(d["job_location"], "Berlin, Berlin, Germany")
         self.assertEqual(d["posted_time_ago"], "2 hours ago")
+        self.assertIn("Cint is a pioneer in research technology", d["job_description"])
+        self.assertIn("support our CTO based in Berlin", d["job_description"])
         self.assertEqual(d["criteria"]["seniority_level"], "Mid-Senior level")
         self.assertEqual(d["criteria"]["employment_type"], "Full-time")
         self.assertEqual(d["criteria"]["job_function"], "Administrative")
@@ -22,4 +24,3 @@ class TestLinkedInDetailExtract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
