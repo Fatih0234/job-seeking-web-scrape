@@ -77,4 +77,4 @@ scrapy crawl linkedin_first_job_detail -O output/linkedin_first_job_detail.jsonl
 
 ## Documentation
 - Project handoff / history / decisions: `docs/AI_HANDOFF.md`
-
+- Database ERD + read/write flows: `docs/DB_ERD_AND_FLOWS.md`
