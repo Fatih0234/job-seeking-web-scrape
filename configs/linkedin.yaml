@@ -1,0 +1,21 @@
+linkedin:
+  searches:
+    - name: de_data_eng_page1
+      keywords: "Data Engineering"
+      countries:
+        - name: Germany
+          # If omitted, geoId will be resolved via LinkedIn typeahead.
+          # geo_id: "101282230"
+          # If omitted, we'll use the country name as the `location=` query param.
+          # location: "Germany"
+          cities:
+            mode: country_only
+
+      # Filters are specified by human labels, and mapped to LinkedIn codes
+      # dynamically by parsing the LinkedIn jobs search page HTML.
+      filters:
+        date_posted: "Any time"          # f_TPR
+        job_type: ["Full-time"]         # f_JT
+        experience_level: []            # f_E
+        remote: []                      # f_WT
+
