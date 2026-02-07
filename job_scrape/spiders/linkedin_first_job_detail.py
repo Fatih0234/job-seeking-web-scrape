@@ -19,7 +19,14 @@ class LinkedInFirstJobDetailSpider(scrapy.Spider):
 
     name = "linkedin_first_job_detail"
     allowed_domains = ["www.linkedin.com", "linkedin.com", "de.linkedin.com"]
-    custom_settings = {"ROBOTSTXT_OBEY": False}
+    custom_settings = {
+        "ROBOTSTXT_OBEY": False,
+        "PLAYWRIGHT_CONTEXTS": {
+            "default": {
+                "viewport": {"width": 1280, "height": 720},
+            }
+        },
+    }
 
     def __init__(
         self,

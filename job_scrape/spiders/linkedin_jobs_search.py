@@ -29,7 +29,14 @@ class LinkedInJobsSearchSpider(scrapy.Spider):
 
     # LinkedIn's robots.txt likely disallows this path; keep global defaults
     # conservative, but allow this milestone spider to run.
-    custom_settings = {"ROBOTSTXT_OBEY": False}
+    custom_settings = {
+        "ROBOTSTXT_OBEY": False,
+        "PLAYWRIGHT_CONTEXTS": {
+            "default": {
+                "viewport": {"width": 1280, "height": 720},
+            }
+        },
+    }
 
     def __init__(
         self,

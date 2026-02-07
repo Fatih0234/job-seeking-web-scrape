@@ -2,3 +2,5 @@ scrapy>=2.11,<3
 scrapy-playwright>=0.0.34
 playwright>=1.40
 PyYAML>=6.0.1
+psycopg[binary]>=3.2.3
+python-dotenv>=1.0.1

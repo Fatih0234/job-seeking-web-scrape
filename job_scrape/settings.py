@@ -26,9 +26,11 @@ USER_AGENT = (
 ROBOTSTXT_OBEY = True
 
 # Concurrency and throttling settings
+# Conservative defaults to reduce blocks.
 CONCURRENT_REQUESTS = 2
-CONCURRENT_REQUESTS_PER_DOMAIN = 2
-DOWNLOAD_DELAY = 1.0
+CONCURRENT_REQUESTS_PER_DOMAIN = 1
+DOWNLOAD_DELAY = 2.0
+RANDOMIZE_DOWNLOAD_DELAY = True
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
@@ -69,8 +71,8 @@ DOWNLOAD_DELAY = 1.0
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
 AUTOTHROTTLE_ENABLED = True
+#AUTOTHROTTLE_START_DELAY = 2.0
 # The initial download delay
-#AUTOTHROTTLE_START_DELAY = 5
 # The maximum download delay to be set in case of high latencies
 #AUTOTHROTTLE_MAX_DELAY = 60
 # The average number of requests Scrapy should be sending in parallel to
@@ -102,10 +104,6 @@ DOWNLOAD_HANDLERS = {
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
 PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 60_000
-PLAYWRIGHT_CONTEXTS = {
-    "default": {
-        "viewport": {"width": 1280, "height": 720},
-        # Use the same UA at the browser-context level (in addition to Scrapy's).
-        "user_agent": USER_AGENT,
-    }
-}
+# Do not pre-create contexts globally; it forces browser startup even for spiders
+# that do not use Playwright. Spiders that need Playwright should set context
+# options via `custom_settings` or request `meta`.
