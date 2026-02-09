@@ -162,10 +162,15 @@ class LinkedInDiscoveryPaginatedSpider(scrapy.Spider):
             if not job_id or not job_url:
                 continue
 
-            if job_id not in self._seen_by_search[sid]:
-                self._seen_by_search[sid].add(job_id)
-                new_count += 1
-                self._jobs_discovered[sid] += 1
+            # Only emit a discovery record the first time we see a job_id in this
+            # crawl run for this search. Dedupe also happens in Postgres, but
+            # emitting fewer duplicates reduces JSONL size and DB upserts.
+            if job_id in self._seen_by_search[sid]:
+                continue
+
+            self._seen_by_search[sid].add(job_id)
+            new_count += 1
+            self._jobs_discovered[sid] += 1
 
             yield {
                 "record_type": "job_discovered",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from scripts.crawl_common import (
@@ -25,7 +26,7 @@ def main() -> None:
     try:
         # Optional: allow YAML bootstrap into DB if requested.
         if os.getenv("SYNC_SEARCH_DEFINITIONS", "1") == "1":
-            _run([str(Path(".venv/bin/python")), "scripts/sync_search_definitions.py"])
+            _run([sys.executable, "scripts/sync_search_definitions.py"])
 
         searches = load_enabled_searches()
         if not searches:
@@ -36,10 +37,10 @@ def main() -> None:
         env = os.environ.copy()
         env["CRAWL_RUN_ID"] = crawl_run_id
 
-        discovery_out = _run([str(Path(".venv/bin/python")), "scripts/run_discovery.py"], env=env)
+        discovery_out = _run([sys.executable, "scripts/run_discovery.py"], env=env)
         discovery_stats = json.loads(discovery_out)
 
-        details_out = _run([str(Path(".venv/bin/python")), "scripts/run_details.py"], env=env)
+        details_out = _run([sys.executable, "scripts/run_details.py"], env=env)
         details_stats = json.loads(details_out)
 
         status = "success"
@@ -59,4 +60,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from scripts.db import connect, now_utc_iso
@@ -43,8 +44,9 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
     env.setdefault("CIRCUIT_BREAKER_BLOCKS", "3")
 
     cmd = [
-        str(Path(".venv/bin/python")),
-        str(Path(".venv/bin/scrapy")),
+        sys.executable,
+        "-m",
+        "scrapy",
         "crawl",
         "linkedin_job_detail_batch",
         "-a",
@@ -56,12 +58,13 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
         "-s",
         "LOG_LEVEL=INFO",
     ]
-    subprocess.check_call(cmd, env=env)
+    # Keep stdout clean for the JSON status line this script prints.
+    subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
     return inputs_path
 
 
 def import_results(jsonl_path: Path) -> dict:
-    cmd = [str(Path(".venv/bin/python")), "scripts/import_details.py", str(jsonl_path)]
+    cmd = [sys.executable, "scripts/import_details.py", str(jsonl_path)]
     out = subprocess.check_output(cmd, text=True)
     return json.loads(out.strip())
 
@@ -90,4 +93,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

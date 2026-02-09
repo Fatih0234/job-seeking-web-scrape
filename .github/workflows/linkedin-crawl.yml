@@ -1,0 +1,72 @@
+name: LinkedIn Crawl
+
+concurrency:
+  group: linkedin-crawl-${{ github.ref_name }}
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Every 12 hours (UTC)
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      sync_search_definitions:
+        description: "Sync YAML search definitions into DB before crawling"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Configure run flags
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions }}" = "true" ]; then
+            echo "SYNC_SEARCH_DEFINITIONS=1" >> "$GITHUB_ENV"
+          else
+            echo "SYNC_SEARCH_DEFINITIONS=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run crawl
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
+
+          DISCOVERY_TPR_POLICY: auto_if_any_time
+          DISCOVERY_TPR_RECENT_HOURS: "30"
+          DISCOVERY_TPR_RECENT_CODE: r86400
+          DISCOVERY_TPR_FALLBACK_CODE: r604800
+        run: |
+          python scripts/run_crawl.py
+
+      - name: Upload artifacts (output/)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output
+          path: output/**
+          if-no-files-found: warn
