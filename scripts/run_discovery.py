@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import uuid
 from pathlib import Path
 
 from scripts.crawl_common import (
@@ -13,6 +12,8 @@ from scripts.crawl_common import (
     load_enabled_searches,
     write_discovery_inputs,
 )
+
+
 def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> Path:
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     inputs_path = write_discovery_inputs(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
@@ -48,21 +49,44 @@ def import_results(jsonl_path: Path) -> dict:
 
 
 def main() -> None:
+    # If orchestrated (scripts/run_crawl.py), reuse the existing crawl run id and
+    # let the orchestrator finish the crawl_runs row with combined stats.
+    existing_run_id = os.getenv("CRAWL_RUN_ID")
+    if existing_run_id:
+        crawl_run_id = existing_run_id
+        searches = load_enabled_searches()
+        if not searches:
+            raise SystemExit("No enabled search_definitions found; run scripts/sync_search_definitions.py first")
+
+        create_search_runs(crawl_run_id, searches)
+
+        out_jsonl = Path("output") / f"discovery_{crawl_run_id}.jsonl"
+        run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
+
+        stats = import_results(out_jsonl)
+        print(json.dumps({"crawl_run_id": crawl_run_id, **stats}, ensure_ascii=False))
+        return
+
+    # Standalone mode: create + finish crawl_runs here.
     trigger = os.getenv("CRAWL_TRIGGER", "manual")
     crawl_run_id = create_crawl_run(trigger)
-    searches = load_enabled_searches()
-    if not searches:
-        finish_crawl_run(crawl_run_id, status="failed", stats={}, error="No enabled search_definitions found")
-        raise SystemExit("No enabled search_definitions found; run scripts/sync_search_definitions.py first")
+    try:
+        searches = load_enabled_searches()
+        if not searches:
+            finish_crawl_run(crawl_run_id, status="failed", stats={}, error="No enabled search_definitions found")
+            raise SystemExit("No enabled search_definitions found; run scripts/sync_search_definitions.py first")
 
-    create_search_runs(crawl_run_id, searches)
+        create_search_runs(crawl_run_id, searches)
 
-    out_jsonl = Path("output") / f"discovery_{crawl_run_id}.jsonl"
-    run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
+        out_jsonl = Path("output") / f"discovery_{crawl_run_id}.jsonl"
+        run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
 
-    stats = import_results(out_jsonl)
-    finish_crawl_run(crawl_run_id, status=stats.get("status", "success"), stats=stats, error=stats.get("error"))
-    print(json.dumps({"crawl_run_id": crawl_run_id, **stats}, ensure_ascii=False))
+        stats = import_results(out_jsonl)
+        finish_crawl_run(crawl_run_id, status=stats.get("status", "success"), stats=stats, error=stats.get("error"))
+        print(json.dumps({"crawl_run_id": crawl_run_id, **stats}, ensure_ascii=False))
+    except Exception as e:
+        finish_crawl_run(crawl_run_id, status="failed", stats={}, error=str(e))
+        raise
 
 
 if __name__ == "__main__":
