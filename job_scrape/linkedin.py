@@ -66,6 +66,34 @@ class LinkedInSearchCard:
     rank: int
 
 
+def parse_no_results_box(html: str) -> Optional[dict[str, Optional[str]]]:
+    """
+    Detect the LinkedIn guest jobs "no results" state.
+
+    Example page contains:
+      - section.no-results
+      - .no-results__main-title-keywords
+      - p.no-results__subheading
+
+    Returns a small dict for logging/diagnostics, or None if not present.
+    """
+    sel = Selector(text=html)
+    sec = sel.css("section.no-results")
+    if not sec:
+        return None
+
+    keywords = _clean_text(sec.css(".no-results__main-title-keywords::text").get())
+    # Use string(.) to include nested <strong> text etc.
+    title_text = _clean_text(sec.xpath("string(.//h1)").get())
+    subheading = _clean_text(sec.css("p.no-results__subheading::text").get())
+
+    return {
+        "keywords": keywords,
+        "title_text": title_text,
+        "subheading": subheading,
+    }
+
+
 def parse_search_results(html: str, *, search_url: str, base_url: str = "https://www.linkedin.com") -> list[dict[str, Any]]:
     """
     Parse LinkedIn public jobs search HTML for job cards.
