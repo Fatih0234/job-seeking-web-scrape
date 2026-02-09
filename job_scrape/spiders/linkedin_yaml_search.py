@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import scrapy
 
-from job_scrape.linkedin import parse_search_results
+from job_scrape.linkedin import parse_no_results_box, parse_search_results
 from job_scrape.linkedin_facets import build_label_to_value_map, parse_facet_options, resolve_facet_values
 from job_scrape.linkedin_typeahead import JsonFileCache, build_typeahead_url, pick_best_geo_hit
 from job_scrape.yaml_config import LinkedInConfig, LinkedInSearchSpec, load_linkedin_config
@@ -250,9 +250,14 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
         scraped_at = datetime.now(timezone.utc).isoformat()
         items = parse_search_results(response.text, search_url=response.url)
         if not items:
+            nr = parse_no_results_box(response.text)
+            if nr:
+                self.logger.info("No results page detected for '%s'. URL=%s", search_name, response.url)
+                return
+
             self.logger.warning("No job cards extracted for '%s'. URL=%s", search_name, response.url)
 
-            # Dump HTML for debugging
+            # Dump HTML for debugging (unknown empty: likely selector drift).
             out_dir = Path("output")
             out_dir.mkdir(parents=True, exist_ok=True)
             safe_name = "".join(c if c.isalnum() else "_" for c in search_name)[:60]

@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 import scrapy
 from scrapy_playwright.page import PageMethod
 
-from job_scrape.linkedin import parse_search_results
+from job_scrape.linkedin import parse_no_results_box, parse_search_results
 from job_scrape.linkedin_detail import parse_job_detail
 
 
@@ -63,7 +63,11 @@ class LinkedInFirstJobDetailSpider(scrapy.Spider):
     def parse_search(self, response: scrapy.http.Response):
         items = parse_search_results(response.text, search_url=response.url)
         if not items:
-            self.logger.error("No job cards extracted from search page. URL=%s", response.url)
+            nr = parse_no_results_box(response.text)
+            if nr:
+                self.logger.warning("No results page detected; cannot proceed to a job detail. URL=%s", response.url)
+            else:
+                self.logger.error("No job cards extracted from search page. URL=%s", response.url)
             return
 
         first = items[0]

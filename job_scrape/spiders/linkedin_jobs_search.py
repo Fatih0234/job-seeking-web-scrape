@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 import scrapy
 from scrapy_playwright.page import PageMethod
 
-from job_scrape.linkedin import parse_search_results
+from job_scrape.linkedin import parse_no_results_box, parse_search_results
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:
@@ -92,7 +92,7 @@ class LinkedInJobsSearchSpider(scrapy.Spider):
                 "playwright": True,
                 "playwright_include_page": True,
                 "playwright_page_methods": [
-                    PageMethod("wait_for_selector", "ul.jobs-search__results-list"),
+                    PageMethod("wait_for_selector", "ul.jobs-search__results-list, section.no-results"),
                     PageMethod("wait_for_timeout", 1000),
                     PageMethod("evaluate", "window.scrollBy(0, document.body.scrollHeight)"),
                     PageMethod("wait_for_timeout", 1000),
@@ -129,7 +129,11 @@ class LinkedInJobsSearchSpider(scrapy.Spider):
                         "Saved output/linkedin_blocked.html and output/linkedin_blocked.png for inspection."
                     )
                 else:
-                    self.logger.warning("No job cards extracted. Selectors may have changed or results are empty.")
+                    nr = parse_no_results_box(response.text)
+                    if nr:
+                        self.logger.info("No results page detected. URL=%s", response.url)
+                    else:
+                        self.logger.warning("No job cards extracted. Selectors may have changed or results are empty.")
 
             for it in items:
                 it["scraped_at"] = scraped_at
