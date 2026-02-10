@@ -8,6 +8,16 @@ Source taxonomy:
 Extractor:
 - `job_scrape/skill_extraction.py`
 
+## Taxonomy YAML Aliases Format
+
+`canonical` skill names remain in English and are what we store in Postgres.
+
+For matching, `aliases` supports two formats:
+- Old (backward compatible): `aliases: ["airflow", "apache airflow"]`
+- New (bilingual/multilingual): `aliases: { en: ["airflow"], de: ["workflow-orkestrierung"], ... }`
+
+When `aliases` is a mapping, the extractor flattens aliases across all language keys into a single list for matching.
+
 ## Storage (Supabase Postgres)
 
 Skills are stored on `job_scrape.job_details` (because `job_description` lives there).

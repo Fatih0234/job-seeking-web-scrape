@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -22,6 +23,14 @@ def _clean_str(v: Any) -> str:
     return s
 
 
+def _normalize_for_match(v: str) -> str:
+    # Deterministic normalization: unicode NFKC, lowercase, collapse whitespace.
+    s = unicodedata.normalize("NFKC", v)
+    s = s.lower()
+    s = " ".join(s.split()).strip()
+    return s
+
+
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -34,12 +43,40 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return out
 
 
+def _flatten_aliases(aliases_raw: Any, *, ctx: str) -> list[str]:
+    """
+    Backward compatible aliases parsing:
+    - aliases: ["..."] (old format)
+    - aliases: { en: ["..."], de: ["..."], ... } (new format)
+    Returns a flat list of strings (may include duplicates; caller dedupes).
+    """
+    if aliases_raw is None:
+        return []
+
+    if isinstance(aliases_raw, list):
+        if not all(isinstance(x, str) for x in aliases_raw):
+            raise ValueError(f"{ctx}.aliases must be a list of strings")
+        return list(aliases_raw)
+
+    if isinstance(aliases_raw, dict):
+        out: list[str] = []
+        for lang, vals in aliases_raw.items():
+            if not isinstance(vals, list) or not all(isinstance(x, str) for x in vals):
+                raise ValueError(f"{ctx}.aliases[{lang!r}] must be a list of strings")
+            out.extend(vals)
+        return out
+
+    raise ValueError(f"{ctx}.aliases must be a list of strings or a mapping of language->list[str]")
+
+
 def _compile_alias_regex(aliases: list[str]) -> Optional[re.Pattern[str]]:
     # Avoid very short purely-alpha aliases (e.g. "go", "sh") unless you have
     # special handling; otherwise they cause many false positives.
     cleaned: list[str] = []
     for a in aliases:
-        a = a.strip()
+        if not isinstance(a, str):
+            continue
+        a = _normalize_for_match(a)
         if not a:
             continue
         if a.isalpha() and len(a) <= 2:
@@ -117,16 +154,23 @@ def load_skill_taxonomy(path: str | Path = _DEFAULT_TAXONOMY_PATH) -> SkillTaxon
             if not isinstance(item, dict):
                 raise ValueError(f"group {group_name!r} item[{idx}] must be a mapping")
             canonical = _clean_str(item.get("canonical"))
-            aliases_raw = item.get("aliases") or []
-            if not isinstance(aliases_raw, list) or not all(isinstance(x, str) for x in aliases_raw):
-                raise ValueError(f"group {group_name!r} item[{idx}].aliases must be a list of strings")
+            aliases_flat = _flatten_aliases(item.get("aliases"), ctx=f"group {group_name!r} item[{idx}]")
 
-            aliases = [_clean_str(x) for x in aliases_raw]
-            # Also match canonical spelling.
-            aliases.append(canonical)
+            aliases: list[str] = []
+            for x in aliases_flat:
+                # Safeguard: ignore empty/whitespace aliases.
+                if not isinstance(x, str):
+                    continue
+                x2 = _normalize_for_match(x)
+                if not x2:
+                    continue
+                aliases.append(x2)
+
+            # Also match canonical spelling (still stored as-is for output).
+            aliases.append(_normalize_for_match(canonical))
 
             rx = _compile_alias_regex(aliases)
-            entries.append(SkillEntry(canonical=canonical, aliases=tuple(aliases), _rx=rx))
+            entries.append(SkillEntry(canonical=canonical, aliases=tuple(_dedupe_preserve_order(aliases)), _rx=rx))
 
         groups[group_name.strip()] = tuple(entries)
 
@@ -141,11 +185,15 @@ def extract_grouped_skills(text: Optional[str], *, taxonomy: SkillTaxonomy) -> d
     if not text:
         return {}
 
+    text_n = _normalize_for_match(text)
+    if not text_n:
+        return {}
+
     out: dict[str, list[str]] = {}
     for group_name, entries in taxonomy.groups.items():
         hits: list[str] = []
         for e in entries:
-            if e.matches(text):
+            if e.matches(text_n):
                 hits.append(e.canonical)
         if hits:
             out[group_name] = hits

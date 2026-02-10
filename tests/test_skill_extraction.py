@@ -30,6 +30,65 @@ groups:
             self.assertEqual(out["languages"], ["Python", "SQL"])
             self.assertEqual(out["cloud_platforms"], ["AWS"])
 
+    def test_aliases_dict_bilingual_is_supported(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "tax.yaml"
+            p.write_text(
+                """
+version: 1
+groups:
+  orchestration:
+    - canonical: Apache Airflow
+      aliases:
+        en: ["airflow", "apache airflow"]
+        de: ["workflow-orkestrierung", "ablaufsteuerung"]
+""".lstrip(),
+                encoding="utf-8",
+            )
+            tax = load_skill_taxonomy(p)
+            text_de = "Erfahrung mit Workflow-Orkestrierung und Ablaufsteuerung ist erforderlich."
+            out = extract_grouped_skills(text_de, taxonomy=tax)
+            self.assertEqual(out, {"orchestration": ["Apache Airflow"]})
+
+    def test_aliases_dict_mixed_languages_match(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "tax.yaml"
+            p.write_text(
+                """
+version: 1
+groups:
+  orchestration:
+    - canonical: Apache Airflow
+      aliases:
+        en: ["airflow"]
+        de: ["workflow-orkestrierung"]
+""".lstrip(),
+                encoding="utf-8",
+            )
+            tax = load_skill_taxonomy(p)
+            self.assertEqual(extract_grouped_skills("We use Airflow daily.", taxonomy=tax), {"orchestration": ["Apache Airflow"]})
+            self.assertEqual(
+                extract_grouped_skills("Kenntnisse in Workflow-Orkestrierung.", taxonomy=tax),
+                {"orchestration": ["Apache Airflow"]},
+            )
+
+    def test_aliases_malformed_raises(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "tax.yaml"
+            p.write_text(
+                """
+version: 1
+groups:
+  orchestration:
+    - canonical: Apache Airflow
+      aliases: 123
+""".lstrip(),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_skill_taxonomy(p)
+            self.assertIn("aliases must be", str(ctx.exception))
+
     def test_short_alpha_alias_is_ignored(self):
         # Avoid false positives like "go" in normal sentences.
         with tempfile.TemporaryDirectory() as td:
@@ -51,4 +110,3 @@ groups:
 
 if __name__ == "__main__":
     unittest.main()
-
