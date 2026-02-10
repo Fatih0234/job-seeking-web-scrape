@@ -20,6 +20,11 @@ from scripts.crawl_common import (
 from scripts.db import connect
 
 
+def _log(msg: str) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[run_discovery {ts}] {msg}", file=sys.stderr)
+
+
 def _float_env(name: str, default: float) -> float:
     v = os.getenv(name)
     if v is None or v == "":
@@ -124,6 +129,11 @@ def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> P
     env.setdefault("CIRCUIT_BREAKER_BLOCKS", "3")
     env.setdefault("DUPLICATE_PAGE_LIMIT", "3")
 
+    _log(
+        f"running spider searches={len(searches)} "
+        f"MAX_PAGES_PER_SEARCH={env.get('MAX_PAGES_PER_SEARCH')} "
+        f"MAX_JOBS_DISCOVERED_PER_SEARCH={env.get('MAX_JOBS_DISCOVERED_PER_SEARCH')}"
+    )
     cmd = [
         sys.executable,
         "-m",
@@ -140,14 +150,22 @@ def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> P
         "LOG_LEVEL=INFO",
     ]
     # Keep stdout clean for the JSON status line this script prints.
-    subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    try:
+        subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Discovery spider failed (exit={e.returncode}). See Scrapy logs above.") from e
     return inputs_path
 
 
 def import_results(jsonl_path: Path) -> dict:
     cmd = [sys.executable, "-m", "scripts.import_discovery", str(jsonl_path)]
-    out = subprocess.check_output(cmd, text=True)
-    return json.loads(out.strip())
+    try:
+        out = subprocess.check_output(cmd, text=True)
+        return json.loads(out.strip())
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"import_discovery failed (exit={e.returncode}).") from e
+    except json.JSONDecodeError as e:
+        raise RuntimeError("import_discovery did not return valid JSON") from e
 
 
 def main() -> None:
