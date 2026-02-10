@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import requests
@@ -12,6 +13,25 @@ from scripts.db import connect
 
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+_NON_ALNUM_RE = re.compile(r"[^A-Za-z0-9]+")
+
+
+def slugify(value: str, *, max_len: int = 40) -> str:
+    """
+    Stable ASCII slug for naming DB search_definitions rows.
+    """
+    s = _NON_ALNUM_RE.sub("_", (value or "").strip()).strip("_").lower()
+    if not s:
+        return "x"
+    return s[:max_len]
+
+
+def build_search_definition_name(*, base: str, country: str, kw_idx: int, keyword: str) -> str:
+    """
+    Build a unique name for a single (base search, country, keyword-variant) definition.
+    """
+    return f"{base}__{slugify(country)}__kw{kw_idx}_{slugify(keyword)}"
 
 
 def fetch_json(url: str) -> Any:
@@ -84,11 +104,12 @@ def upsert_search_definition(row: dict[str, Any]) -> None:
 def main() -> None:
     cfg = load_linkedin_config("configs/linkedin.yaml")
     for search in cfg.searches:
+        facet_keywords = search.keywords[0]
         for country in search.countries:
             geo_id = country.geo_id or resolve_country_geo_id(country.name)
             location_text = country.location or country.name
 
-            label_map = discover_facet_label_map(keywords=search.keywords, location=location_text, geo_id=geo_id)
+            label_map = discover_facet_label_map(keywords=facet_keywords, location=location_text, geo_id=geo_id)
 
             facets: dict[str, Any] = {}
             if search.filters.date_posted:
@@ -110,24 +131,25 @@ def main() -> None:
             cities_mode = country.cities_mode
             cities = list(country.cities)
 
-            upsert_search_definition(
-                {
-                    "name": search.name,
-                    "source": "linkedin",
-                    "enabled": True,
-                    "keywords": search.keywords,
-                    "country_name": country.name,
-                    "geo_id": geo_id,
-                    "location_text": location_text,
-                    "facets": facets,
-                    "cities_mode": cities_mode,
-                    "cities": cities,
-                }
-            )
+            for idx, kw in enumerate(search.keywords):
+                name = build_search_definition_name(base=search.name, country=country.name, kw_idx=idx, keyword=kw)
+                upsert_search_definition(
+                    {
+                        "name": name,
+                        "source": "linkedin",
+                        "enabled": True,
+                        "keywords": kw,
+                        "country_name": country.name,
+                        "geo_id": geo_id,
+                        "location_text": location_text,
+                        "facets": facets,
+                        "cities_mode": cities_mode,
+                        "cities": cities,
+                    }
+                )
 
     print("synced_search_definitions_ok")
 
 
 if __name__ == "__main__":
     main()
-

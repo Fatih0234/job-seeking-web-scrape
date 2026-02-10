@@ -106,6 +106,9 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
     def _after_geo_resolution(self):
         # 2) Ensure we have facet label->code mappings for each country (fetch 1 HTML page per country).
         for search in self.cfg.searches:
+            # Facet options are expected to be stable regardless of keywords; use the first variant
+            # to avoid N extra requests.
+            facet_keywords = search.keywords[0]
             for country in search.countries:
                 geo_id = country.geo_id or self._geo.get(f"COUNTRY_REGION::{country.name}", {}).get("id")
                 if not geo_id:
@@ -114,7 +117,7 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
                 facet_key = f"facets::{geo_id}"
                 if facet_key not in self._facet_maps:
                     url = self._build_search_url(
-                        keywords=search.keywords,
+                        keywords=facet_keywords,
                         location=country.location or country.name,
                         geo_id=geo_id,
                         page_num=0,
@@ -188,36 +191,45 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
             cities_mode = ctx.get("cities_mode", "country_only")
             cities = ctx.get("cities") or []
 
-            if cities_mode == "list" and cities:
-                for city in cities:
-                    ckey = f"POPULATED_PLACE::{ctx['country']}::{city}"
-                    city_id = self._geo.get(ckey, {}).get("id")
-                    if not city_id:
-                        raise ValueError(f"Could not resolve city id for '{city}' in '{ctx['country']}'")
-                    facets_with_city = dict(facets)
-                    facets_with_city["f_PP"] = city_id
+            for kw in search.keywords:
+                kw_slug = "".join(c if c.isalnum() else "_" for c in kw).strip("_")
+                kw_tag = kw_slug[:40] if kw_slug else "keyword"
+
+                if cities_mode == "list" and cities:
+                    for city in cities:
+                        ckey = f"POPULATED_PLACE::{ctx['country']}::{city}"
+                        city_id = self._geo.get(ckey, {}).get("id")
+                        if not city_id:
+                            raise ValueError(f"Could not resolve city id for '{city}' in '{ctx['country']}'")
+                        facets_with_city = dict(facets)
+                        facets_with_city["f_PP"] = city_id
+                        url = self._build_search_url(
+                            keywords=kw,
+                            location=ctx["location"],
+                            geo_id=geo_id,
+                            page_num=0,
+                            facets=facets_with_city,
+                        )
+                        yield scrapy.Request(
+                            url,
+                            callback=self.parse_search,
+                            cb_kwargs={"search_name": f"{search.name}__kw_{kw_tag}__{city}", "keywords": kw},
+                            dont_filter=True,
+                        )
+                else:
                     url = self._build_search_url(
-                        keywords=search.keywords,
+                        keywords=kw,
                         location=ctx["location"],
                         geo_id=geo_id,
                         page_num=0,
-                        facets=facets_with_city,
+                        facets=facets,
                     )
                     yield scrapy.Request(
                         url,
                         callback=self.parse_search,
-                        cb_kwargs={"search_name": f"{search.name}__{city}"},
+                        cb_kwargs={"search_name": f"{search.name}__kw_{kw_tag}", "keywords": kw},
                         dont_filter=True,
                     )
-            else:
-                url = self._build_search_url(
-                    keywords=search.keywords,
-                    location=ctx["location"],
-                    geo_id=geo_id,
-                    page_num=0,
-                    facets=facets,
-                )
-                yield scrapy.Request(url, callback=self.parse_search, cb_kwargs={"search_name": search.name}, dont_filter=True)
 
         # Avoid re-running if callbacks fire again.
         self._search_queue = []
@@ -246,16 +258,16 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
 
         return f"{base}?{urlencode(params, doseq=True)}"
 
-    def parse_search(self, response: scrapy.http.Response, *, search_name: str):
+    def parse_search(self, response: scrapy.http.Response, *, search_name: str, keywords: str):
         scraped_at = datetime.now(timezone.utc).isoformat()
         items = parse_search_results(response.text, search_url=response.url)
         if not items:
             nr = parse_no_results_box(response.text)
             if nr:
-                self.logger.info("No results page detected for '%s'. URL=%s", search_name, response.url)
+                self.logger.info("No results page detected for '%s' (keywords=%r). URL=%s", search_name, keywords, response.url)
                 return
 
-            self.logger.warning("No job cards extracted for '%s'. URL=%s", search_name, response.url)
+            self.logger.warning("No job cards extracted for '%s' (keywords=%r). URL=%s", search_name, keywords, response.url)
 
             # Dump HTML for debugging (unknown empty: likely selector drift).
             out_dir = Path("output")
@@ -266,4 +278,5 @@ class LinkedInYamlSearchSpider(scrapy.Spider):
         for it in items:
             it["scraped_at"] = scraped_at
             it["search_name"] = search_name
+            it["keywords"] = keywords
             yield it
