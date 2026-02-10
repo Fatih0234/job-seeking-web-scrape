@@ -4,9 +4,15 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.db import connect, now_utc_iso
+
+
+def _log(msg: str) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[run_details {ts}] {msg}", file=sys.stderr)
 
 
 def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_hours: int) -> list[dict]:
@@ -63,14 +69,22 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
         "LOG_LEVEL=INFO",
     ]
     # Keep stdout clean for the JSON status line this script prints.
-    subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    try:
+        subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Detail spider failed (exit={e.returncode}). See Scrapy logs above.") from e
     return inputs_path
 
 
 def import_results(jsonl_path: Path) -> dict:
     cmd = [sys.executable, "-m", "scripts.import_details", str(jsonl_path)]
-    out = subprocess.check_output(cmd, text=True)
-    return json.loads(out.strip())
+    try:
+        out = subprocess.check_output(cmd, text=True)
+        return json.loads(out.strip())
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"import_details failed (exit={e.returncode}).") from e
+    except json.JSONDecodeError as e:
+        raise RuntimeError("import_details did not return valid JSON") from e
 
 
 def main() -> None:
@@ -81,18 +95,26 @@ def main() -> None:
     limit = int(os.getenv("MAX_JOB_DETAILS_PER_RUN", "200"))
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
+    _log(f"selecting jobs limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours}")
 
     jobs = select_jobs_for_details(limit=limit, staleness_days=staleness_days, blocked_retry_hours=blocked_retry_hours)
     if not jobs:
+        _log("selected 0 jobs (nothing to do)")
         print(json.dumps({"status": "success", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}}))
         return
 
+    _log(f"selected {len(jobs)} jobs for details")
     out_jsonl = Path("output") / f"details_{crawl_run_id}.jsonl"
     run_spider(crawl_run_id=crawl_run_id, jobs=jobs, out_jsonl=out_jsonl)
 
     stats = import_results(out_jsonl)
     stats.setdefault("counts", {})
     stats["counts"]["detail_jobs_selected"] = len(jobs)
+    _log(
+        "imported details "
+        f"parse_ok={int(stats.get('counts', {}).get('detail_parse_ok', 0) or 0)} "
+        f"blocked={int(stats.get('counts', {}).get('detail_blocked', 0) or 0)}"
+    )
     print(json.dumps(stats, ensure_ascii=False))
 
 
