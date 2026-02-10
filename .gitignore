@@ -6,6 +6,7 @@ __pycache__/
 output/
 cache/
 docs/_scratch/
+.playwright-cli/
 
 .pytest_cache/
 .mypy_cache/

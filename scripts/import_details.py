@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from scripts.db import connect
+from job_scrape.skill_extraction import extract_grouped_skills, load_skill_taxonomy
 
 
 def parse_ts(s: str) -> datetime:
@@ -22,8 +23,25 @@ def main() -> None:
     counts: Counter[str] = Counter()
     crawl_run_id = None
 
+    taxonomy = load_skill_taxonomy()
+
     with connect() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                """
+                select column_name
+                  from information_schema.columns
+                 where table_schema = 'job_scrape'
+                   and table_name = 'job_details'
+                """
+            )
+            cols = {r[0] for r in cur.fetchall()}
+            has_extracted_skills = (
+                "extracted_skills" in cols
+                and "extracted_skills_version" in cols
+                and "extracted_skills_extracted_at" in cols
+            )
+
             for line in path.read_text(encoding="utf-8").splitlines():
                 if not line.strip():
                     continue
@@ -47,39 +65,91 @@ def main() -> None:
                 if not isinstance(criteria, dict):
                     criteria = {}
 
-                cur.execute(
-                    """
-                    insert into job_scrape.job_details
-                      (source, job_id, scraped_at, job_title, company_name, job_location, posted_time_ago,
-                       job_description, criteria, parse_ok, last_error)
-                    values
-                      (%s, %s, %s, %s, %s, %s, %s,
-                       %s, %s::jsonb, %s, %s)
-                    on conflict (source, job_id) do update set
-                      scraped_at = excluded.scraped_at,
-                      job_title = excluded.job_title,
-                      company_name = excluded.company_name,
-                      job_location = excluded.job_location,
-                      posted_time_ago = excluded.posted_time_ago,
-                      job_description = excluded.job_description,
-                      criteria = excluded.criteria,
-                      parse_ok = excluded.parse_ok,
-                      last_error = excluded.last_error
-                    """,
-                    (
-                        source,
-                        job_id,
-                        scraped_at,
-                        rec.get("job_title"),
-                        rec.get("company_name"),
-                        rec.get("job_location"),
-                        rec.get("posted_time_ago"),
-                        rec.get("job_description"),
-                        json.dumps(criteria),
-                        parse_ok,
-                        rec.get("last_error") or ("blocked" if blocked else None),
-                    ),
-                )
+                job_description = rec.get("job_description")
+                extracted_skills = None
+                extracted_version = None
+                extracted_at = None
+                if has_extracted_skills and parse_ok and isinstance(job_description, str) and job_description.strip():
+                    extracted_skills = extract_grouped_skills(job_description, taxonomy=taxonomy)
+                    extracted_version = taxonomy.version
+                    extracted_at = datetime.now(timezone.utc)
+
+                if has_extracted_skills:
+                    cur.execute(
+                        """
+                        insert into job_scrape.job_details
+                          (source, job_id, scraped_at, job_title, company_name, job_location, posted_time_ago,
+                           job_description, criteria, parse_ok, last_error,
+                           extracted_skills, extracted_skills_version, extracted_skills_extracted_at)
+                        values
+                          (%s, %s, %s, %s, %s, %s, %s,
+                           %s, %s::jsonb, %s, %s,
+                           %s::jsonb, %s, %s)
+                        on conflict (source, job_id) do update set
+                          scraped_at = excluded.scraped_at,
+                          job_title = excluded.job_title,
+                          company_name = excluded.company_name,
+                          job_location = excluded.job_location,
+                          posted_time_ago = excluded.posted_time_ago,
+                          job_description = excluded.job_description,
+                          criteria = excluded.criteria,
+                          parse_ok = excluded.parse_ok,
+                          last_error = excluded.last_error,
+                          extracted_skills = excluded.extracted_skills,
+                          extracted_skills_version = excluded.extracted_skills_version,
+                          extracted_skills_extracted_at = excluded.extracted_skills_extracted_at
+                        """,
+                        (
+                            source,
+                            job_id,
+                            scraped_at,
+                            rec.get("job_title"),
+                            rec.get("company_name"),
+                            rec.get("job_location"),
+                            rec.get("posted_time_ago"),
+                            job_description,
+                            json.dumps(criteria),
+                            parse_ok,
+                            rec.get("last_error") or ("blocked" if blocked else None),
+                            json.dumps(extracted_skills) if extracted_skills is not None else None,
+                            extracted_version,
+                            extracted_at,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        insert into job_scrape.job_details
+                          (source, job_id, scraped_at, job_title, company_name, job_location, posted_time_ago,
+                           job_description, criteria, parse_ok, last_error)
+                        values
+                          (%s, %s, %s, %s, %s, %s, %s,
+                           %s, %s::jsonb, %s, %s)
+                        on conflict (source, job_id) do update set
+                          scraped_at = excluded.scraped_at,
+                          job_title = excluded.job_title,
+                          company_name = excluded.company_name,
+                          job_location = excluded.job_location,
+                          posted_time_ago = excluded.posted_time_ago,
+                          job_description = excluded.job_description,
+                          criteria = excluded.criteria,
+                          parse_ok = excluded.parse_ok,
+                          last_error = excluded.last_error
+                        """,
+                        (
+                            source,
+                            job_id,
+                            scraped_at,
+                            rec.get("job_title"),
+                            rec.get("company_name"),
+                            rec.get("job_location"),
+                            rec.get("posted_time_ago"),
+                            job_description,
+                            json.dumps(criteria),
+                            parse_ok,
+                            rec.get("last_error") or ("blocked" if blocked else None),
+                        ),
+                    )
 
                 counts["detail_rows_upserted"] += 1
                 if parse_ok:
@@ -105,4 +175,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
