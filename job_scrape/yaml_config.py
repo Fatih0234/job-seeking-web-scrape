@@ -27,7 +27,7 @@ class LinkedInFiltersSpec:
 @dataclass(frozen=True)
 class LinkedInSearchSpec:
     name: str
-    keywords: str
+    keywords: tuple[str, ...]
     countries: tuple[CountrySpec, ...]
     filters: LinkedInFiltersSpec
 
@@ -80,7 +80,9 @@ def load_linkedin_config(path: str | Path) -> LinkedInConfig:
             raise ValueError(f"Invalid search at index {i}: must be a mapping")
 
         name = _as_str(sr.get("name", f"search_{i}"), field=f"linkedin.searches[{i}].name")
-        keywords = _as_str(sr.get("keywords", ""), field=f"linkedin.searches[{i}].keywords")
+        keywords = _as_str_list(sr.get("keywords", None), field=f"linkedin.searches[{i}].keywords")
+        if not keywords or any((not k.strip()) for k in keywords):
+            raise ValueError(f"Invalid search '{name}': keywords must be a non-empty string or list of strings")
 
         countries_raw = sr.get("countries", [])
         if not isinstance(countries_raw, list) or not countries_raw:
@@ -135,4 +137,3 @@ def load_linkedin_config(path: str | Path) -> LinkedInConfig:
         )
 
     return LinkedInConfig(searches=tuple(searches))
-
