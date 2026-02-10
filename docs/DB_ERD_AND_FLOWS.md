@@ -76,6 +76,9 @@ erDiagram
     text posted_time_ago
     text job_description
     jsonb criteria
+    jsonb extracted_skills
+    int extracted_skills_version
+    timestamptz extracted_skills_extracted_at
     bool parse_ok
     text last_error
   }
@@ -183,6 +186,10 @@ Writes (DB):
 - `job_scrape.job_details`
   - upsert by `(source, job_id)`
   - updates all parsed fields + `scraped_at`, `parse_ok`, `last_error`
+  - if the columns exist, also writes:
+    - `extracted_skills` (jsonb)
+    - `extracted_skills_version`
+    - `extracted_skills_extracted_at`
 
 ### D) Orchestrated run (sync -> discovery -> details)
 Entry point:
@@ -205,4 +212,3 @@ Run-time budgets (env-driven):
 Block detection + stop early:
 - `job_scrape/spiders/linkedin_discovery_paginated.py`
 - `job_scrape/spiders/linkedin_job_detail_batch.py`
-

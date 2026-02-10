@@ -1,0 +1,469 @@
+version: 1
+description: >
+  Baseline deterministic skill taxonomy for extracting grouped keywords from job ads
+  across data engineering and adjacent roles (analytics engineer, data platform, BI,
+  data warehouse, streaming, software engineer - data).
+notes:
+  - Prefer canonical skill names for storage; aliases for matching only.
+  - Avoid very short aliases (<=2 chars) in code unless carefully handled.
+  - Some vendor services included as aliases under the platform (e.g., EC2 -> AWS).
+
+groups:
+  languages:
+    - canonical: Python
+      aliases: ["python", "python3", "pandas", "numpy", "pyarrow"]
+    - canonical: SQL
+      aliases: ["sql", "t-sql", "tsql", "pl/sql", "plsql", "ansi sql"]
+    - canonical: Java
+      aliases: ["java", "jvm"]
+    - canonical: Scala
+      aliases: ["scala"]
+    - canonical: Go
+      aliases: ["go", "golang"]
+    - canonical: JavaScript
+      aliases: ["javascript", "node.js", "nodejs"]
+    - canonical: TypeScript
+      aliases: ["typescript"]
+    - canonical: Bash
+      aliases: ["bash", "shell scripting", "shell script", "sh", "zsh"]
+    - canonical: R
+      aliases: ["r language", "r programming"]
+    - canonical: C#
+      aliases: ["c#", "c sharp", "dotnet", ".net", "asp.net"]
+    - canonical: Rust
+      aliases: ["rust"]
+
+  databases_relational:
+    - canonical: PostgreSQL
+      aliases: ["postgresql", "postgres", "psql"]
+    - canonical: MySQL
+      aliases: ["mysql"]
+    - canonical: Microsoft SQL Server
+      aliases: ["sql server", "mssql", "microsoft sql server"]
+    - canonical: Oracle Database
+      aliases: ["oracle database", "oracle db"]
+    - canonical: SQLite
+      aliases: ["sqlite"]
+    - canonical: MariaDB
+      aliases: ["mariadb"]
+    - canonical: IBM Db2
+      aliases: ["db2", "ibm db2"]
+    - canonical: CockroachDB
+      aliases: ["cockroachdb", "cockroach db"]
+
+  databases_nosql_search_cache:
+    - canonical: MongoDB
+      aliases: ["mongodb", "mongo"]
+    - canonical: Elasticsearch
+      aliases: ["elasticsearch", "elastic search", "elk stack"]
+    - canonical: OpenSearch
+      aliases: ["opensearch", "open search"]
+    - canonical: Redis
+      aliases: ["redis"]
+    - canonical: Cassandra
+      aliases: ["cassandra", "apache cassandra"]
+    - canonical: DynamoDB
+      aliases: ["dynamodb", "dynamo db"]
+    - canonical: Cosmos DB
+      aliases: ["cosmos db", "azure cosmos db"]
+    - canonical: Neo4j
+      aliases: ["neo4j", "graph database"]
+    - canonical: ClickHouse
+      aliases: ["clickhouse", "click house"]
+
+  data_warehouses_lakehouse:
+    - canonical: Snowflake
+      aliases: ["snowflake"]
+    - canonical: BigQuery
+      aliases: ["bigquery", "big query", "google bigquery"]
+    - canonical: Amazon Redshift
+      aliases: ["redshift", "amazon redshift"]
+    - canonical: Azure Synapse
+      aliases: ["azure synapse", "synapse analytics", "synapse"]
+    - canonical: Databricks
+      aliases: ["databricks", "databricks sql"]
+    - canonical: Teradata
+      aliases: ["teradata"]
+    - canonical: Vertica
+      aliases: ["vertica"]
+    - canonical: Greenplum
+      aliases: ["greenplum"]
+    - canonical: Apache Druid
+      aliases: ["druid", "apache druid"]
+    - canonical: Apache Pinot
+      aliases: ["pinot", "apache pinot"]
+    - canonical: Delta Lake
+      aliases: ["delta lake", "delta tables"]
+    - canonical: Apache Iceberg
+      aliases: ["iceberg", "apache iceberg"]
+    - canonical: Apache Hudi
+      aliases: ["hudi", "apache hudi"]
+    - canonical: Trino
+      aliases: ["trino"]
+    - canonical: Presto
+      aliases: ["presto", "presto sql"]
+    - canonical: DuckDB
+      aliases: ["duckdb", "duck db"]
+
+  cloud_platforms:
+    - canonical: AWS
+      aliases:
+        [
+          "aws",
+          "amazon web services",
+          "ec2",
+          "s3",
+          "lambda",
+          "glue",
+          "athena",
+          "emr",
+          "eks",
+          "ecs",
+          "fargate",
+          "cloudwatch",
+          "cloudformation",
+          "redshift",
+          "dynamodb",
+          "kinesis",
+          "msk",
+          "step functions",
+          "eventbridge",
+          "sqs",
+          "sns",
+          "iam",
+          "lake formation"
+        ]
+    - canonical: GCP
+      aliases:
+        [
+          "gcp",
+          "google cloud",
+          "google cloud platform",
+          "bigquery",
+          "cloud storage",
+          "gcs",
+          "dataflow",
+          "dataproc",
+          "composer",
+          "pubsub",
+          "pub/sub",
+          "cloud run",
+          "cloud functions",
+          "cloud scheduler",
+          "cloud sql",
+          "firestore",
+          "vertex ai"
+        ]
+    - canonical: Azure
+      aliases:
+        [
+          "azure",
+          "microsoft azure",
+          "data factory",
+          "azure data factory",
+          "adf",
+          "synapse",
+          "azure synapse",
+          "databricks",
+          "azure databricks",
+          "event hubs",
+          "service bus",
+          "functions",
+          "azure functions",
+          "blob storage",
+          "data lake storage",
+          "adls",
+          "cosmos db",
+          "azure monitor",
+          "arm templates"
+        ]
+
+  orchestration_workflow:
+    - canonical: Apache Airflow
+      aliases: ["airflow", "apache airflow", "astronomer", "astro"]
+    - canonical: Dagster
+      aliases: ["dagster"]
+    - canonical: Prefect
+      aliases: ["prefect"]
+    - canonical: Luigi
+      aliases: ["luigi", "spotify luigi"]
+    - canonical: Apache Oozie
+      aliases: ["oozie", "apache oozie"]
+    - canonical: Argo Workflows
+      aliases: ["argo workflows", "argo workflow"]
+    - canonical: Temporal
+      aliases: ["temporal", "temporal.io"]
+    - canonical: Jenkins
+      aliases: ["jenkins"]
+
+  transformation_modeling:
+    - canonical: dbt
+      aliases: ["dbt", "data build tool", "dbt core", "dbt cloud"]
+    - canonical: Data Modeling
+      aliases: ["data modeling", "dimensional modeling", "star schema", "snowflake schema"]
+    - canonical: Kimball Modeling
+      aliases: ["kimball", "kimball methodology"]
+    - canonical: Data Vault
+      aliases: ["data vault", "datavault", "data vault 2.0"]
+    - canonical: ETL
+      aliases: ["etl", "extract transform load"]
+    - canonical: ELT
+      aliases: ["elt", "extract load transform"]
+    - canonical: CDC
+      aliases: ["cdc", "change data capture"]
+    - canonical: SCD
+      aliases: ["scd", "slowly changing dimension"]
+    - canonical: Semantic Layer
+      aliases: ["semantic layer", "metrics layer", "metric layer"]
+
+  ingestion_integration:
+    - canonical: Fivetran
+      aliases: ["fivetran"]
+    - canonical: Airbyte
+      aliases: ["airbyte"]
+    - canonical: Stitch
+      aliases: ["stitch", "stitch data"]
+    - canonical: Matillion
+      aliases: ["matillion"]
+    - canonical: Talend
+      aliases: ["talend"]
+    - canonical: Informatica
+      aliases: ["informatica", "informatica powercenter"]
+    - canonical: SSIS
+      aliases: ["ssis", "sql server integration services"]
+    - canonical: NiFi
+      aliases: ["nifi", "apache nifi"]
+    - canonical: Kafka Connect
+      aliases: ["kafka connect", "connectors", "sink connector", "source connector"]
+    - canonical: Debezium
+      aliases: ["debezium"]
+    - canonical: Meltano
+      aliases: ["meltano"]
+    - canonical: Singer
+      aliases: ["singer", "singer taps", "singer targets"]
+
+  streaming_messaging:
+    - canonical: Apache Kafka
+      aliases: ["kafka", "apache kafka", "confluent", "confluent kafka"]
+    - canonical: Apache Flink
+      aliases: ["flink", "apache flink"]
+    - canonical: Apache Spark Structured Streaming
+      aliases: ["spark streaming", "structured streaming", "spark structured streaming"]
+    - canonical: Apache Beam
+      aliases: ["beam", "apache beam"]
+    - canonical: Apache Pulsar
+      aliases: ["pulsar", "apache pulsar"]
+    - canonical: RabbitMQ
+      aliases: ["rabbitmq", "rabbit mq"]
+    - canonical: Amazon Kinesis
+      aliases: ["kinesis", "kinesis data streams", "kinesis firehose"]
+    - canonical: Google Pub/Sub
+      aliases: ["pubsub", "pub/sub", "google pubsub", "google pub/sub"]
+    - canonical: Azure Event Hubs
+      aliases: ["event hubs", "azure event hubs"]
+    - canonical: MQTT
+      aliases: ["mqtt"]
+
+  processing_compute:
+    - canonical: Apache Spark
+      aliases: ["spark", "apache spark", "pyspark"]
+    - canonical: Hadoop
+      aliases: ["hadoop", "hdfs", "yarn", "mapreduce"]
+    - canonical: Hive
+      aliases: ["hive", "apache hive"]
+    - canonical: Impala
+      aliases: ["impala", "apache impala"]
+    - canonical: Dataproc
+      aliases: ["dataproc", "google dataproc"]
+    - canonical: EMR
+      aliases: ["emr", "amazon emr"]
+    - canonical: Kubernetes Batch
+      aliases: ["kubernetes jobs", "k8s jobs", "batch jobs on kubernetes"]
+
+  storage_data_lakes:
+    - canonical: Amazon S3
+      aliases: ["s3", "amazon s3", "s3 bucket"]
+    - canonical: Google Cloud Storage
+      aliases: ["gcs", "google cloud storage", "cloud storage"]
+    - canonical: Azure Data Lake Storage
+      aliases: ["adls", "azure data lake", "data lake storage", "adls gen2"]
+    - canonical: HDFS
+      aliases: ["hdfs", "hadoop distributed file system"]
+    - canonical: MinIO
+      aliases: ["minio", "min io"]
+    - canonical: Lakehouse
+      aliases: ["lakehouse", "data lakehouse"]
+    - canonical: Data Lake
+      aliases: ["data lake", "datalake"]
+
+  devops_infra:
+    - canonical: Docker
+      aliases: ["docker", "dockerfile", "docker compose", "docker-compose"]
+    - canonical: Kubernetes
+      aliases: ["kubernetes", "k8s", "helm"]
+    - canonical: Terraform
+      aliases: ["terraform", "infrastructure as code", "iac"]
+    - canonical: Pulumi
+      aliases: ["pulumi"]
+    - canonical: Ansible
+      aliases: ["ansible"]
+    - canonical: Git
+      aliases: ["git", "gitflow", "pull request", "merge request"]
+    - canonical: GitHub Actions
+      aliases: ["github actions", "gh actions"]
+    - canonical: GitLab CI
+      aliases: ["gitlab ci", "gitlab pipelines"]
+    - canonical: CI/CD
+      aliases: ["ci/cd", "continuous integration", "continuous delivery", "continuous deployment"]
+    - canonical: Linux
+      aliases: ["linux", "unix"]
+    - canonical: Nginx
+      aliases: ["nginx"]
+    - canonical: Networking
+      aliases: ["tcp/ip", "dns", "load balancer", "reverse proxy"]
+
+  programming_data_formats:
+    - canonical: JSON
+      aliases: ["json"]
+    - canonical: YAML
+      aliases: ["yaml", "yml"]
+    - canonical: Parquet
+      aliases: ["parquet"]
+    - canonical: Avro
+      aliases: ["avro"]
+    - canonical: ORC
+      aliases: ["orc"]
+    - canonical: Protobuf
+      aliases: ["protobuf", "protocol buffers"]
+    - canonical: CSV
+      aliases: ["csv", "comma separated values"]
+    - canonical: XML
+      aliases: ["xml"]
+
+  bi_analytics_tools:
+    - canonical: Power BI
+      aliases: ["power bi", "powerbi", "dax", "power query"]
+    - canonical: Tableau
+      aliases: ["tableau"]
+    - canonical: Looker
+      aliases: ["looker", "lookml"]
+    - canonical: Qlik
+      aliases: ["qlik", "qlikview", "qlik sense"]
+    - canonical: Superset
+      aliases: ["superset", "apache superset", "preset"]
+    - canonical: Metabase
+      aliases: ["metabase"]
+    - canonical: Mode
+      aliases: ["mode analytics", "mode"]
+    - canonical: Excel
+      aliases: ["excel", "microsoft excel", "spreadsheets", "pivot table", "power pivot"]
+    - canonical: Google Sheets
+      aliases: ["google sheets"]
+
+  data_quality_observability:
+    - canonical: Great Expectations
+      aliases: ["great expectations", "greatexpectations"]
+    - canonical: Soda
+      aliases: ["soda", "soda core", "soda sql"]
+    - canonical: dbt Tests
+      aliases: ["dbt tests", "dbt test", "dbt testing"]
+    - canonical: Monte Carlo
+      aliases: ["monte carlo", "montecarlo"]
+    - canonical: Bigeye
+      aliases: ["bigeye"]
+    - canonical: Datadog
+      aliases: ["datadog"]
+    - canonical: Prometheus
+      aliases: ["prometheus"]
+    - canonical: Grafana
+      aliases: ["grafana"]
+    - canonical: OpenTelemetry
+      aliases: ["opentelemetry", "otel"]
+    - canonical: Logging
+      aliases: ["logging", "log aggregation", "centralized logging"]
+    - canonical: Monitoring
+      aliases: ["monitoring", "alerting", "on-call", "on call"]
+
+  governance_catalog_lineage:
+    - canonical: Data Governance
+      aliases: ["data governance", "governance"]
+    - canonical: Data Catalog
+      aliases: ["data catalog", "data catalogue"]
+    - canonical: Data Lineage
+      aliases: ["data lineage", "lineage"]
+    - canonical: DataHub
+      aliases: ["datahub", "acryl datahub", "acryl"]
+    - canonical: OpenMetadata
+      aliases: ["openmetadata", "open metadata"]
+    - canonical: Amundsen
+      aliases: ["amundsen"]
+    - canonical: Collibra
+      aliases: ["collibra"]
+    - canonical: Alation
+      aliases: ["alation"]
+    - canonical: Apache Atlas
+      aliases: ["atlas", "apache atlas"]
+    - canonical: Unity Catalog
+      aliases: ["unity catalog"]
+
+  security_privacy_compliance:
+    - canonical: IAM
+      aliases: ["iam", "identity and access management", "rbac", "role based access control"]
+    - canonical: Encryption
+      aliases: ["encryption", "at-rest encryption", "in-transit encryption", "tls", "ssl"]
+    - canonical: GDPR
+      aliases: ["gdpr", "general data protection regulation"]
+    - canonical: PII
+      aliases: ["pii", "personally identifiable information"]
+    - canonical: Secrets Management
+      aliases: ["secrets management", "vault", "hashicorp vault", "aws secrets manager"]
+    - canonical: SOC 2
+      aliases: ["soc 2", "soc2"]
+
+  apis_backend_data_services:
+    - canonical: REST APIs
+      aliases: ["rest api", "restful", "http api"]
+    - canonical: GraphQL
+      aliases: ["graphql"]
+    - canonical: gRPC
+      aliases: ["grpc"]
+    - canonical: Microservices
+      aliases: ["microservices", "service oriented architecture", "soa"]
+    - canonical: Data APIs
+      aliases: ["data api", "data service", "internal api"]
+    - canonical: Event-Driven Architecture
+      aliases: ["event-driven", "event driven architecture", "event sourcing"]
+
+  mlops_ai_adjacent:
+    - canonical: MLOps
+      aliases: ["mlops", "machine learning ops", "model ops"]
+    - canonical: MLflow
+      aliases: ["mlflow"]
+    - canonical: Feature Store
+      aliases: ["feature store", "feature store platform"]
+    - canonical: Model Serving
+      aliases: ["model serving", "inference service", "online inference"]
+    - canonical: Vertex AI
+      aliases: ["vertex ai"]
+    - canonical: SageMaker
+      aliases: ["sagemaker", "sage maker"]
+    - canonical: Azure Machine Learning
+      aliases: ["azure machine learning", "azure ml"]
+
+  methodologies_roles:
+    - canonical: Analytics Engineering
+      aliases: ["analytics engineer", "analytics engineering"]
+    - canonical: Data Engineering
+      aliases: ["data engineer", "data engineering"]
+    - canonical: Data Platform
+      aliases: ["data platform", "platform engineering", "data infrastructure"]
+    - canonical: Data Warehouse
+      aliases: ["data warehouse", "enterprise data warehouse", "edw"]
+    - canonical: Business Intelligence
+      aliases: ["business intelligence", "bi"]
+    - canonical: Agile
+      aliases: ["agile", "scrum", "kanban"]
+    - canonical: Stakeholder Management
+      aliases: ["stakeholder management", "cross-functional", "cross functional"]
+    - canonical: Documentation
+      aliases: ["documentation", "technical writing", "runbook", "playbook"]
