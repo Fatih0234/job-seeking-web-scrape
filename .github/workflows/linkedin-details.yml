@@ -1,23 +1,13 @@
-name: LinkedIn Crawl
-
-concurrency:
-  group: linkedin-crawl-${{ github.ref_name }}
-  cancel-in-progress: false
+name: LinkedIn Details
 
 on:
   schedule:
-    # Every 12 hours (UTC)
-    - cron: "0 */12 * * *"
-  workflow_dispatch:
-    inputs:
-      sync_search_definitions:
-        description: "Sync YAML search definitions into DB before crawling"
-        required: false
-        default: false
-        type: boolean
+    # Daily (UTC)
+    - cron: "30 3 * * *"
+  workflow_dispatch: {}
 
 jobs:
-  crawl:
+  details:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -43,30 +33,22 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_*.py"
 
-      - name: Configure run flags
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions }}" = "true" ]; then
-            echo "SYNC_SEARCH_DEFINITIONS=1" >> "$GITHUB_ENV"
-          else
-            echo "SYNC_SEARCH_DEFINITIONS=0" >> "$GITHUB_ENV"
-          fi
-
-      - name: Run crawl
+      - name: Run details-only crawl
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
-          RUN_DISCOVERY: "1"
-          RUN_DETAILS: "0"
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_details' || 'github_manual_details' }}
+          RUN_DISCOVERY: "0"
+          RUN_DETAILS: "1"
+          SYNC_SEARCH_DEFINITIONS: "0"
 
-          DISCOVERY_TPR_POLICY: auto_if_any_time
-          DISCOVERY_TPR_RECENT_HOURS: "30"
-          DISCOVERY_TPR_RECENT_CODE: r86400
-          DISCOVERY_TPR_FALLBACK_CODE: r604800
+          # Keep details conservative to reduce blocks.
+          MAX_JOB_DETAILS_PER_RUN: "20"
+          DETAIL_BLOCKED_RETRY_HOURS: "24"
+
         run: |
           python -m scripts.run_crawl
 
       - name: Report latest run
-        if: always()
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
@@ -79,3 +61,4 @@ jobs:
           name: output
           path: output/**
           if-no-files-found: warn
+
