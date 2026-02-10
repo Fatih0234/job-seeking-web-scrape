@@ -27,15 +27,18 @@ def main() -> None:
         run_discovery = os.getenv("RUN_DISCOVERY", "1").strip().lower() not in {"0", "false", "no"}
         run_details = os.getenv("RUN_DETAILS", "1").strip().lower() not in {"0", "false", "no"}
 
+        if not run_discovery and not run_details:
+            raise RuntimeError("Nothing to do: both RUN_DISCOVERY and RUN_DETAILS are disabled")
+
         # Optional: allow YAML bootstrap into DB if requested.
-        if os.getenv("SYNC_SEARCH_DEFINITIONS", "1") == "1":
+        if run_discovery and os.getenv("SYNC_SEARCH_DEFINITIONS", "1") == "1":
             _run([sys.executable, "-m", "scripts.sync_search_definitions"])
 
-        searches = load_enabled_searches()
-        if not searches:
-            raise RuntimeError("No enabled search_definitions found")
-
-        create_search_runs(crawl_run_id, searches)
+        if run_discovery:
+            searches = load_enabled_searches()
+            if not searches:
+                raise RuntimeError("No enabled search_definitions found")
+            create_search_runs(crawl_run_id, searches)
 
         env = os.environ.copy()
         env["CRAWL_RUN_ID"] = crawl_run_id

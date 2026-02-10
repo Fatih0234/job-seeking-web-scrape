@@ -9,7 +9,7 @@ from pathlib import Path
 from scripts.db import connect, now_utc_iso
 
 
-def select_jobs_for_details(*, limit: int, staleness_days: int) -> list[dict]:
+def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_hours: int) -> list[dict]:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -22,11 +22,15 @@ def select_jobs_for_details(*, limit: int, staleness_days: int) -> list[dict]:
                    and (
                         d.job_id is null
                         or d.scraped_at < now() - (%s || ' days')::interval
+                        or (
+                            d.last_error = 'blocked'
+                            and d.scraped_at < now() - (%s || ' hours')::interval
+                        )
                    )
                  order by (d.job_id is null) desc, d.scraped_at asc nulls first, j.last_seen_at desc
                  limit %s
                 """,
-                (str(staleness_days), limit),
+                (str(staleness_days), str(blocked_retry_hours), limit),
             )
             rows = cur.fetchall()
 
@@ -76,8 +80,9 @@ def main() -> None:
 
     limit = int(os.getenv("MAX_JOB_DETAILS_PER_RUN", "200"))
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
+    blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
 
-    jobs = select_jobs_for_details(limit=limit, staleness_days=staleness_days)
+    jobs = select_jobs_for_details(limit=limit, staleness_days=staleness_days, blocked_retry_hours=blocked_retry_hours)
     if not jobs:
         print(json.dumps({"status": "success", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}}))
         return

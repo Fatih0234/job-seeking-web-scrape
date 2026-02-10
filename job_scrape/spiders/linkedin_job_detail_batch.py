@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,17 +39,21 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
     allowed_domains = ["www.linkedin.com", "linkedin.com", "de.linkedin.com"]
     custom_settings = {
         "ROBOTSTXT_OBEY": False,
-        "PLAYWRIGHT_CONTEXTS": {
-            "default": {
-                "viewport": {"width": 1280, "height": 720},
-            }
-        },
+        # Details are the most block-prone part; keep this spider extra conservative.
+        "CONCURRENT_REQUESTS": 1,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "DOWNLOAD_DELAY": 4.0,
+        "RANDOMIZE_DOWNLOAD_DELAY": True,
     }
 
     def __init__(self, inputs: str, crawl_run_id: str = "", **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.inputs_path = inputs
         self.crawl_run_id = crawl_run_id or None
+        self._allow_playwright_fallback = (
+            str(os.getenv("DETAIL_ALLOW_PLAYWRIGHT_FALLBACK", "")).strip().lower()
+            in {"1", "true", "yes", "y", "on"}
+        )
 
         # Debug artifacts for failures (limited)
         self._failure_debug_limit = 5
@@ -67,6 +72,10 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
         except Exception:
             self._block_streak_limit = 3
 
+    @staticmethod
+    def _guest_posting_url(job_id: str) -> str:
+        return f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
+
     async def start(self):
         data = json.loads(Path(self.inputs_path).read_text(encoding="utf-8"))
         jobs = data.get("jobs") or []
@@ -75,7 +84,10 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
             return
 
         for j in jobs:
-            url = j["job_url"]
+            job_id = str(j.get("job_id") or "").strip()
+            if not job_id:
+                continue
+            url = self._guest_posting_url(job_id)
             yield scrapy.Request(
                 url,
                 callback=self.parse_detail,
@@ -122,7 +134,7 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
         parsed = parse_job_detail(response.text)
         critical_missing = parsed.get("job_title") is None
 
-        if critical_missing and not used_playwright:
+        if critical_missing and (not used_playwright) and self._allow_playwright_fallback:
             # Retry once with Playwright rendering.
             yield scrapy.Request(
                 job["job_url"],
@@ -133,6 +145,7 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
                     "playwright": True,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
+                        # Wait a bit for the detail page to render.
                         PageMethod("wait_for_timeout", 1500),
                     ],
                 },
