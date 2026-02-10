@@ -61,7 +61,7 @@ jobs:
           DISCOVERY_TPR_RECENT_CODE: r86400
           DISCOVERY_TPR_FALLBACK_CODE: r604800
         run: |
-          python scripts/run_crawl.py
+          python -m scripts.run_crawl
 
       - name: Upload artifacts (output/)
         if: always()

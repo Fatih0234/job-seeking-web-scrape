@@ -145,7 +145,7 @@ def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> P
 
 
 def import_results(jsonl_path: Path) -> dict:
-    cmd = [sys.executable, "scripts/import_discovery.py", str(jsonl_path)]
+    cmd = [sys.executable, "-m", "scripts.import_discovery", str(jsonl_path)]
     out = subprocess.check_output(cmd, text=True)
     return json.loads(out.strip())
 
