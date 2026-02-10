@@ -1,7 +1,43 @@
 linkedin:
   searches:
     - name: de_data_eng_page1
-      keywords: "Data Engineering"
+      # NOTE: The DB sync expands this list into one search_definition per keyword.
+      # To avoid churn in generated search_definition names, prefer appending new
+      # keywords instead of re-ordering/removing existing ones.
+      keywords:
+        - "Data Engineering"
+        - "Data Engineer"
+        - "Analytics Engineer"
+        - "Data Platform Engineer"
+        - "Data Infrastructure Engineer"
+        - "Data Pipeline Engineer"
+        - "ETL Developer"
+        - "ELT Developer"
+        - "Database Developer"
+        - "SQL Developer"
+        - "Big Data Engineer"
+        - "Cloud Data Engineer"
+        - "Data DevOps Engineer"
+        - "DataOps Engineer"
+        - "Platform Engineer"
+        - "Site Reliability Engineer Data"
+        - "MLOps Engineer"
+        - "BI Engineer"
+        - "Reporting Engineer"
+        - "Data Visualization Engineer"
+        - "Analytics Developer"
+        - "Decision Support Engineer"
+        - "Data Warehouse Engineer"
+        - "Snowflake Engineer"
+        - "BigQuery Engineer"
+        - "Databricks Engineer"
+        - "dbt Engineer"
+        - "Data Modeling Engineer"
+        - "Data Architect"
+        - "Streaming Data Engineer"
+        - "Kafka Engineer"
+        - "Realtime Data Engineer"
+        - "Event Platform Engineer"
       countries:
         - name: Germany
           # If omitted, geoId will be resolved via LinkedIn typeahead.
@@ -17,6 +53,6 @@ linkedin:
       # dynamically by parsing the LinkedIn jobs search page HTML.
       filters:
         date_posted: "Any time"          # f_TPR
-        job_type: ["Full-time"]         # f_JT
+        job_type: []                    # f_JT
         experience_level: []            # f_E
         remote: []                      # f_WT
