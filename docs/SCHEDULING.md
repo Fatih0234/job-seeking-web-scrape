@@ -16,6 +16,14 @@ This repo supports scheduled (cron) crawling via GitHub Actions.
     - `true`: runs `scripts/sync_search_definitions.py` first
     - `false`: skips sync (assumes `job_scrape.search_definitions` already exists)
 
+## Discovery-Only Mode
+
+You can skip job detail fetching (which is typically more block-prone) by setting:
+
+- `RUN_DETAILS=0`
+
+This will still run discovery and write deduped `jobs` and `job_search_hits` rows.
+
 ## First-Time Setup
 
 1. Run the workflow manually with `sync_search_definitions=true`.
@@ -41,4 +49,3 @@ Behavior:
 Note:
 - Overlap is intentional (e.g. a 12h schedule with a 24h window). DB dedupe on
   `(source, job_id)` makes overlaps safe.
-
