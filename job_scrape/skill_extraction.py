@@ -8,7 +8,8 @@ from typing import Any, Optional
 import yaml
 
 
-_DEFAULT_TAXONOMY_PATH = Path("data-engineering-keyword-taxonomoy.yaml")
+_DEFAULT_TAXONOMY_PATH = Path("configs") / "data-engineering-keyword-taxonomy.yaml"
+_LEGACY_TAXONOMY_PATH = Path("data-engineering-keyword-taxonomoy.yaml")
 _ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 
 
@@ -79,7 +80,17 @@ class SkillTaxonomy:
 
 
 def load_skill_taxonomy(path: str | Path = _DEFAULT_TAXONOMY_PATH) -> SkillTaxonomy:
-    p = Path(path)
+    # Allow overriding via env var to make scripts robust to different working dirs.
+    import os
+
+    env_path = os.getenv("SKILL_TAXONOMY_PATH")
+    if env_path:
+        p = Path(env_path)
+    else:
+        p = Path(path)
+        if not p.exists() and _LEGACY_TAXONOMY_PATH.exists():
+            p = _LEGACY_TAXONOMY_PATH
+
     data = yaml.safe_load(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("taxonomy must be a YAML mapping")
@@ -139,4 +150,3 @@ def extract_grouped_skills(text: Optional[str], *, taxonomy: SkillTaxonomy) -> d
         if hits:
             out[group_name] = hits
     return out
-

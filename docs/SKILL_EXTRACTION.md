@@ -3,7 +3,7 @@
 This repo supports deterministic extraction of grouped skills/keywords from job descriptions.
 
 Source taxonomy:
-- `data-engineering-keyword-taxonomoy.yaml`
+- `configs/data-engineering-keyword-taxonomy.yaml`
 
 Extractor:
 - `job_scrape/skill_extraction.py`
@@ -38,4 +38,3 @@ export SUPABASE_DB_URL="..."
 Env vars:
 - `SKILL_EXTRACT_LIMIT` (default `500`)
 - `SKILL_EXTRACT_ONLY_MISSING` (default `1`)
-
