@@ -184,24 +184,12 @@ def _seed_cache(cur) -> int:
         """
         with src as (
           select distinct
-            trim(job_location) as location_text_raw,
-            lower(
-              trim(
-                regexp_replace(
-                  regexp_replace(trim(job_location), '\\s+', ' ', 'g'),
-                  '\\s*,\\s*',
-                  ', ',
-                  'g'
-                )
-              )
-            ) as location_text_norm,
-            case
-              when platform in ('linkedin', 'stepstone') then 'de'
-              when platform = 'xing' then 'de,at,ch'
-              else 'de,at,ch'
-            end as country_scope
-          from job_scrape.jobs_dashboard_v
-          where nullif(trim(job_location), '') is not null
+            nullif(btrim(city_token_raw), '') as location_text_raw,
+            nullif(btrim(city_token_norm), '') as location_text_norm,
+            country_scope
+          from job_scrape.jobs_dashboard_location_candidates_v
+          where token_kind = 'city'
+            and nullif(btrim(city_token_norm), '') is not null
         ),
         ins as (
           insert into job_scrape.location_geocode_cache
