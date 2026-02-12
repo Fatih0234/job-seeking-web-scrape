@@ -80,6 +80,8 @@ def _run_single_batch(*, batch_size: int, timeout_seconds: int, trigger: str) ->
     env["RUN_DISCOVERY"] = "0"
     env["RUN_DETAILS"] = "1"
     env["SYNC_SEARCH_DEFINITIONS_STEPSTONE"] = "0"
+    # Catch-up loops run details only; table DDL checks can stall on locks and are unnecessary every batch.
+    env.setdefault("ENSURE_STEPSTONE_TABLES", "0")
     env["MAX_JOB_DETAILS_PER_RUN"] = str(batch_size)
     env["CRAWL_TRIGGER"] = trigger
     # Keep details-script timeout aligned with outer batch timeout.
