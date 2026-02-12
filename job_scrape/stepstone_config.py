@@ -19,6 +19,7 @@ class StepstoneSearchSpec:
     radius: int = 30
     where_type: str = "autosuggest"
     search_origin: str = "Resultlist_top-search"
+    age_days: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,12 @@ def load_stepstone_config(path: str | Path) -> StepstoneConfig:
         where_type = _as_str(sr.get("where_type", "autosuggest"), field=f"{name}.where_type")
         search_origin = _as_str(sr.get("search_origin", "Resultlist_top-search"), field=f"{name}.search_origin")
         country = _as_str(sr.get("country", "Germany"), field=f"{name}.country")
+        age_days_raw = sr.get("age_days")
+        age_days: Optional[int] = None
+        if age_days_raw is not None:
+            age_days = _as_int(age_days_raw, field=f"{name}.age_days", default=0)
+            if age_days not in {1, 7}:
+                raise ValueError(f"{name}.age_days must be one of: 1, 7")
 
         searches.append(
             StepstoneSearchSpec(
@@ -110,6 +117,7 @@ def load_stepstone_config(path: str | Path) -> StepstoneConfig:
                 radius=radius,
                 where_type=where_type,
                 search_origin=search_origin,
+                age_days=age_days,
             )
         )
 

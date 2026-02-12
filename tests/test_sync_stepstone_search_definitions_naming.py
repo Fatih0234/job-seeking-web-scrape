@@ -1,5 +1,7 @@
 import unittest
 
+from job_scrape.stepstone_config import StepstoneSearchSpec
+from scripts.sync_search_definitions_stepstone import build_stepstone_facets
 from scripts.sync_search_definitions_stepstone import build_search_definition_name
 
 
@@ -41,6 +43,30 @@ class TestSyncStepstoneSearchDefinitionsNaming(unittest.TestCase):
         )
         self.assertNotEqual(a, b)
         self.assertNotEqual(a, c)
+
+    def test_build_facets_includes_age_days_when_present(self):
+        spec = StepstoneSearchSpec(
+            name="s",
+            keywords=("Data Engineer",),
+            locations=("Deutschland",),
+            sort=2,
+            radius=30,
+            where_type="autosuggest",
+            search_origin="Resultlist_top-search",
+            age_days=1,
+        )
+        facets = build_stepstone_facets(spec)
+        self.assertEqual(facets["age_days"], 1)
+        self.assertEqual(facets["sort"], 2)
+
+    def test_build_facets_omits_age_days_when_missing(self):
+        spec = StepstoneSearchSpec(
+            name="s",
+            keywords=("Data Engineer",),
+            locations=("Deutschland",),
+        )
+        facets = build_stepstone_facets(spec)
+        self.assertNotIn("age_days", facets)
 
 
 if __name__ == "__main__":

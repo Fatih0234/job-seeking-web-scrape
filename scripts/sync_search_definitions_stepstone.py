@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 from typing import Any
 
+from job_scrape.stepstone_config import StepstoneSearchSpec
 from job_scrape.stepstone_config import load_stepstone_config
 from scripts.db import connect
 
@@ -23,6 +26,18 @@ def build_search_definition_name(*, base: str, location: str, location_idx: int,
         f"{base}__loc{location_idx}_{slugify(location)}"
         f"__kw{kw_idx}_{slugify(keyword)}"
     )
+
+
+def build_stepstone_facets(search: StepstoneSearchSpec) -> dict[str, Any]:
+    facets: dict[str, Any] = {
+        "radius": search.radius,
+        "sort": search.sort,
+        "where_type": search.where_type,
+        "search_origin": search.search_origin,
+    }
+    if search.age_days is not None:
+        facets["age_days"] = search.age_days
+    return facets
 
 
 def upsert_search_definition(row: dict[str, Any]) -> None:
@@ -51,7 +66,16 @@ def upsert_search_definition(row: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    cfg = load_stepstone_config("configs/stepstone.yaml")
+    parser = argparse.ArgumentParser(description="Sync Stepstone search definitions from YAML into DB.")
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        default=os.getenv("STEPSTONE_CONFIG_PATH", "configs/stepstone.yaml"),
+        help="Path to Stepstone YAML config (default: env STEPSTONE_CONFIG_PATH or configs/stepstone.yaml)",
+    )
+    args = parser.parse_args()
+
+    cfg = load_stepstone_config(args.config_path)
 
     for search in cfg.searches:
         for loc_idx, location in enumerate(search.locations):
@@ -64,12 +88,7 @@ def main() -> None:
                     keyword=kw,
                 )
 
-                facets = {
-                    "radius": search.radius,
-                    "sort": search.sort,
-                    "where_type": search.where_type,
-                    "search_origin": search.search_origin,
-                }
+                facets = build_stepstone_facets(search)
 
                 upsert_search_definition(
                     {

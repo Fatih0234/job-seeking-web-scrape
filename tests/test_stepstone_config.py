@@ -26,6 +26,41 @@ stepstone:
             self.assertEqual(s.sort, 2)
             self.assertEqual(s.radius, 30)
             self.assertEqual(s.where_type, "autosuggest")
+            self.assertIsNone(s.age_days)
+
+    def test_load_age_days(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "cfg.yaml"
+            p.write_text(
+                """
+stepstone:
+  searches:
+    - name: s1
+      keywords: "Data Engineering"
+      locations: "Deutschland"
+      age_days: 1
+""".lstrip(),
+                encoding="utf-8",
+            )
+            cfg = load_stepstone_config(p)
+            self.assertEqual(cfg.searches[0].age_days, 1)
+
+    def test_invalid_age_days_raises(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "cfg.yaml"
+            p.write_text(
+                """
+stepstone:
+  searches:
+    - name: s1
+      keywords: "Data Engineering"
+      locations: "Deutschland"
+      age_days: 2
+""".lstrip(),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                load_stepstone_config(p)
 
     def test_invalid_sort_raises(self):
         with tempfile.TemporaryDirectory() as td:

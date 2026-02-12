@@ -43,7 +43,7 @@ class StepstoneDiscoveryPaginatedSpider(scrapy.Spider):
         - name
         - keywords
         - location_text
-        - facets (object, optional): radius, sort, where_type, search_origin
+        - facets (object, optional): radius, sort, where_type, search_origin, age_days
 
     Output:
     - record_type=job_discovered items
@@ -111,12 +111,14 @@ class StepstoneDiscoveryPaginatedSpider(scrapy.Spider):
         sort = facets.get("sort", 2)
         where_type = str(facets.get("where_type", "autosuggest") or "autosuggest")
         search_origin = str(facets.get("search_origin", "Resultlist_top-search") or "Resultlist_top-search")
+        age_days = facets.get("age_days")
 
         url = build_search_url(
             keywords=s.get("keywords", ""),
             location=s.get("location_text", ""),
             radius=radius,
             sort=sort,
+            age_days=age_days,
             page=page_num,
             where_type=where_type,
             search_origin=search_origin,

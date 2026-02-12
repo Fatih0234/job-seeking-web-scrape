@@ -37,6 +37,41 @@ class TestStepstoneExtract(unittest.TestCase):
         self.assertIn("sort=1", url)
         self.assertIn("action=paging_next", url)
 
+    def test_build_search_url_age_filter_page_1(self):
+        url = build_search_url(
+            keywords="Data Engineering",
+            location="Berlin",
+            sort=2,
+            age_days=1,
+            page=1,
+        )
+        self.assertIn("ag=age_1", url)
+        self.assertIn("action=facet_selected%3Bage%3Bage_1", url)
+        self.assertNotIn("action=sort_publish", url)
+
+    def test_build_search_url_age_filter_page_2_keeps_ag_and_paging(self):
+        url = build_search_url(
+            keywords="Data Engineering",
+            location="Berlin",
+            sort=2,
+            age_days=7,
+            page=2,
+        )
+        self.assertIn("ag=age_7", url)
+        self.assertIn("page=2", url)
+        self.assertIn("action=paging_next", url)
+
+    def test_build_search_url_explicit_action_overrides_age(self):
+        url = build_search_url(
+            keywords="Data Engineering",
+            location="Berlin",
+            sort=2,
+            age_days=1,
+            action="manual_action",
+        )
+        self.assertIn("ag=age_1", url)
+        self.assertIn("action=manual_action", url)
+
     def test_normalize_sort_accepts_labels_and_numbers(self):
         self.assertEqual(normalize_sort("relevance"), 1)
         self.assertEqual(normalize_sort("newest"), 2)

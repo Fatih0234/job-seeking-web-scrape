@@ -73,12 +73,27 @@ def sort_action(sort_value: int, *, page: int = 1) -> Optional[str]:
     return None
 
 
+def normalize_age_days(value: Any) -> int:
+    if isinstance(value, int):
+        if value in {1, 7}:
+            return value
+        raise ValueError(f"Unsupported age_days value: {value}")
+
+    s = str(value).strip().lower()
+    if s in {"1", "age_1"}:
+        return 1
+    if s in {"7", "age_7"}:
+        return 7
+    raise ValueError(f"Unsupported age_days value: {value}")
+
+
 def build_search_url(
     *,
     keywords: str,
     location: str,
     radius: int = 30,
     sort: int | str = 2,
+    age_days: int | str | None = None,
     page: int = 1,
     action: Optional[str] = None,
     search_origin: str = "Resultlist_top-search",
@@ -110,7 +125,20 @@ def build_search_url(
     if page > 1:
         params["page"] = str(page)
 
-    action_value = action or sort_action(sort_num, page=page)
+    age_num: Optional[int] = None
+    if age_days is not None:
+        age_num = normalize_age_days(age_days)
+        params["ag"] = f"age_{age_num}"
+
+    action_value = action
+    if action_value is None:
+        if age_num is not None and page == 1:
+            action_value = f"facet_selected;age;age_{age_num}"
+        elif page > 1:
+            action_value = "paging_next"
+        else:
+            action_value = sort_action(sort_num, page=page)
+
     if action_value:
         params["action"] = action_value
 

@@ -1,6 +1,6 @@
 stepstone:
   searches:
-    - name: de_data_eng_stepstone_germany_age1
+    - name: de_data_eng_stepstone_germany_backfill
       keywords:
         - "Data Engineering"
         - "Data Engineer"
@@ -42,4 +42,3 @@ stepstone:
       radius: 30
       where_type: autosuggest
       search_origin: Resultlist_top-search
-      age_days: 1

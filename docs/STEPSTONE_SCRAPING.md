@@ -26,7 +26,7 @@ Implementation:
 - `job_scrape/stepstone.py`
 
 Builder:
-- `build_search_url(keywords, location, radius=30, sort=2, page=1, action=None, search_origin="Resultlist_top-search", where_type="autosuggest")`
+- `build_search_url(keywords, location, radius=30, sort=2, age_days=None, page=1, action=None, search_origin="Resultlist_top-search", where_type="autosuggest")`
 
 Normalization:
 - Lowercase
@@ -44,10 +44,14 @@ Query parameters:
 - `searchOrigin`: default `Resultlist_top-search`
 - `whereType`: default `autosuggest`
 - `page`: included only for `page > 1`
+- `ag`:
+  - when `age_days=1`: `ag=age_1` (last 24h)
+  - when `age_days=7`: `ag=age_7` (last 7 days)
 - `action`:
-  - page 1 + sort=1 -> `sort_relevance`
-  - page 1 + sort=2 -> `sort_publish`
+  - explicit `action` argument (highest precedence)
+  - page 1 + `age_days` -> `facet_selected;age;age_<n>`
   - page > 1 -> `paging_next`
+  - page 1 fallback -> `sort_relevance`/`sort_publish`
 
 ## Discovery Relevance Model
 
@@ -152,9 +156,12 @@ Per search fields:
 - optional `radius` (default `30`)
 - optional `where_type` (default `autosuggest`)
 - optional `search_origin` (default `Resultlist_top-search`)
+- optional `age_days` (`1` or `7`; omitted means no age filter)
 
 Sync script:
 - `scripts/sync_search_definitions_stepstone.py`
+- Config path can be overridden with env:
+  - `STEPSTONE_CONFIG_PATH=configs/stepstone.backfill.yaml`
 
 Expansion behavior:
 - Expands keyword x location combinations into separate DB rows.
@@ -204,6 +211,11 @@ python -m scripts.create_stepstone_tables
 Sync definitions:
 ```bash
 python -m scripts.sync_search_definitions_stepstone
+```
+
+Sync definitions from custom config path:
+```bash
+STEPSTONE_CONFIG_PATH=configs/stepstone.backfill.yaml python -m scripts.sync_search_definitions_stepstone
 ```
 
 Run full Stepstone crawl:
