@@ -54,7 +54,7 @@ jobs:
           SYNC_SEARCH_DEFINITIONS: "0"
 
           # Keep details conservative to reduce blocks.
-          MAX_JOB_DETAILS_PER_RUN: "100"
+          MAX_JOB_DETAILS_PER_RUN: "200"
           DETAIL_BLOCKED_RETRY_HOURS: "24"
           # If a run gets blocked, wait at least one schedule interval before trying again.
           DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES: "180"
