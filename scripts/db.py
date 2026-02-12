@@ -45,7 +45,10 @@ def db_url() -> str:
 
 @contextmanager
 def connect() -> Iterator[psycopg.Connection]:
-    conn = psycopg.connect(db_url())
+    # PgBouncer transaction-pooling can reuse backend sessions across clients,
+    # which breaks psycopg auto-prepared statement names. Disable prepares for
+    # compatibility with pooled Supabase connections.
+    conn = psycopg.connect(db_url(), prepare_threshold=None)
     try:
         yield conn
     finally:

@@ -2,6 +2,9 @@
 
 This repo supports scheduled (cron) crawling via GitHub Actions.
 
+Stepstone implementation details and operator runbook:
+- `/Volumes/T7/job-seeking-web-scrape/docs/STEPSTONE_SCRAPING.md`
+
 ## Prerequisites
 
 - Add a GitHub Actions secret named `SUPABASE_DB_URL`.
@@ -16,6 +19,14 @@ This repo supports scheduled (cron) crawling via GitHub Actions.
     - `true`: runs `scripts/sync_search_definitions.py` first
     - `false`: skips sync (assumes `job_scrape.search_definitions` already exists)
 
+Stepstone has a dedicated workflow:
+- Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/stepstone-crawl.yml`
+- Schedule: every 12 hours (UTC)
+- Manual runs: use `workflow_dispatch`
+  - Optional input `sync_search_definitions_stepstone`:
+    - `true`: runs `scripts/sync_search_definitions_stepstone.py` first
+    - `false`: skips sync and uses existing `job_scrape.stepstone_search_definitions` rows
+
 ## Discovery-Only Mode
 
 You can skip job detail fetching (which is typically more block-prone) by setting:
@@ -29,6 +40,10 @@ This will still run discovery and write deduped `jobs` and `job_search_hits` row
 1. Run the workflow manually with `sync_search_definitions=true`.
 2. Subsequent scheduled runs can use `sync_search_definitions=false` to reduce
    LinkedIn discovery calls.
+
+For Stepstone:
+1. Run the workflow manually with `sync_search_definitions_stepstone=true`.
+2. Scheduled runs can keep sync enabled (default) unless you manage definitions separately.
 
 ## `f_TPR` Incremental Discovery Policy
 

@@ -1,0 +1,19 @@
+stepstone:
+  searches:
+    - name: de_data_eng_stepstone_berlin_variants
+      keywords:
+        - "Data Engineering"
+        - "Analytics Engineer"
+        - "Data Platform Engineer"
+        - "Data Infrastructure Engineer"
+        - "Data Pipeline Engineer"
+        - "ETL Developer"
+        - "ELT Developer"
+        - "Database Developer"
+      locations:
+        - "Berlin"
+      country: Germany
+      sort: newest
+      radius: 30
+      where_type: autosuggest
+      search_origin: Resultlist_top-search

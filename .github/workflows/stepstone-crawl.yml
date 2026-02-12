@@ -1,0 +1,80 @@
+name: Stepstone Crawl
+
+concurrency:
+  group: stepstone-crawl-${{ github.ref_name }}
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Every 12 hours (UTC)
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      sync_search_definitions_stepstone:
+        description: "Sync Stepstone YAML search definitions into DB before crawling"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Configure run flags
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions_stepstone }}" = "true" ]; then
+            echo "SYNC_SEARCH_DEFINITIONS_STEPSTONE=1" >> "$GITHUB_ENV"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions_stepstone }}" = "false" ]; then
+            echo "SYNC_SEARCH_DEFINITIONS_STEPSTONE=0" >> "$GITHUB_ENV"
+          else
+            echo "SYNC_SEARCH_DEFINITIONS_STEPSTONE=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run stepstone crawl
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
+          RUN_DISCOVERY: "1"
+          RUN_DETAILS: "1"
+          ENSURE_STEPSTONE_TABLES: "1"
+        run: |
+          python -m scripts.run_crawl_stepstone
+
+      - name: Report latest run (stepstone)
+        if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REPORT_SOURCE: stepstone
+        run: |
+          python -m scripts.report_latest_run
+
+      - name: Upload artifacts (output/)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-stepstone
+          path: output/**
+          if-no-files-found: warn

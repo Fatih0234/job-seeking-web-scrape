@@ -106,9 +106,16 @@ erDiagram
 ```
 
 Notes:
-- `jobs` is the dedupe table across all searches (unique by `(source, job_id)`).
-- `job_search_hits` is the “fact table” for *where* a job was found (per run).
-- `job_details` is latest-only in v1 (no historical snapshots yet).
+- LinkedIn and XING use shared tables shown above.
+- Stepstone now uses dedicated tables under the same schema:
+  - `stepstone_crawl_runs`
+  - `stepstone_search_definitions`
+  - `stepstone_search_runs`
+  - `stepstone_jobs`
+  - `stepstone_job_search_hits`
+  - `stepstone_job_details`
+- Full Stepstone implementation and operations guide:
+  - `/Volumes/T7/job-seeking-web-scrape/docs/STEPSTONE_SCRAPING.md`
 
 ## Read/Write Paths
 
@@ -126,6 +133,22 @@ Purpose:
 - Turn human-friendly YAML (country names, filter labels) into normalized search definitions:
   - `geo_id` resolved via typeahead
   - `facets` resolved via parsing LinkedIn’s search HTML facet inputs
+
+Stepstone equivalent:
+- Entry point: `scripts/sync_search_definitions_stepstone.py`
+- Reads: `configs/stepstone.yaml`
+- Writes: `job_scrape.stepstone_search_definitions`
+  - `location_text` comes from config locations
+  - `facets` stores `radius`, `sort`, `where_type`, `search_origin`
+
+XING equivalent:
+- Entry point: `scripts/sync_search_definitions_xing.py`
+- Reads: `configs/xing.yaml`
+- Writes: `job_scrape.search_definitions` rows with `source='xing'`
+  - `location_text` is optional (keywords-only mode uses empty string because current shared table has `NOT NULL` for `location_text`)
+  - `country_name` is stored as empty string for XING compatibility with shared table constraints
+  - `facets` stores `pagination_mode='show_more'` and optional `city_id`
+  - XING search URL `id` is not stored/resolved here (site generates it)
 
 ### B) Discovery pipeline (pagination -> jobs + hits)
 Entry point (manual):
@@ -191,6 +214,21 @@ Writes (DB):
     - `extracted_skills_version`
     - `extracted_skills_extracted_at`
 
+Stepstone equivalents:
+- Discovery: `scripts/run_discovery_stepstone.py` + `job_scrape/spiders/stepstone_discovery_paginated.py`
+  - Playwright-first requests
+  - emits only `main` section jobs using Stepstone `data-resultlist-offers-main-displayed`
+- Details: `scripts/run_details_stepstone.py` + `job_scrape/spiders/stepstone_job_detail_batch.py`
+  - Playwright-first detail fetch
+  - upserts `job_scrape.stepstone_job_details`
+
+XING equivalent:
+- Discovery: `scripts/run_discovery_xing.py` + `job_scrape/spiders/xing_discovery_paginated.py`
+  - Playwright-first requests
+  - paginates in-page by clicking `Show more` / `Mehr anzeigen`
+  - upserts shared `job_scrape.jobs` + `job_scrape.job_search_hits` with `source='xing'`
+  - supports keywords-only queries (no location) and optional location/cityId facets
+
 ### D) Orchestrated run (sync -> discovery -> details)
 Entry point:
 - `scripts/run_crawl.py`
@@ -200,6 +238,22 @@ Flow:
 2. `scripts/run_discovery.py`
 3. `scripts/run_details.py`
 4. Update `job_scrape.crawl_runs` with combined `stats` and final `status`
+
+Stepstone orchestrator:
+- `scripts/run_crawl_stepstone.py`
+- Flow:
+1. `scripts/create_stepstone_tables.py` (idempotent table ensure; default enabled)
+2. (optional) `scripts/sync_search_definitions_stepstone.py` if `SYNC_SEARCH_DEFINITIONS_STEPSTONE=1`
+3. `scripts/run_discovery_stepstone.py`
+4. `scripts/run_details_stepstone.py`
+5. Update `job_scrape.stepstone_crawl_runs` with combined `stats` and final `status`
+
+XING orchestrator:
+- `scripts/run_crawl_xing.py`
+- Flow:
+1. (optional) `scripts/sync_search_definitions_xing.py` if `SYNC_SEARCH_DEFINITIONS_XING=1`
+2. `scripts/run_discovery_xing.py`
+3. Update `job_scrape.crawl_runs` with discovery `stats` and final `status`
 
 ## Concurrency and Safety (where enforced)
 

@@ -1,0 +1,22 @@
+xing:
+  searches:
+    - name: xing_data_eng
+      keywords:
+        - "Data Engineering"
+        - "Data Engineer"
+        - "Senior Data Engineer"
+        - "Analytics Engineer"
+        - "Data Platform Engineer"
+        - "Data Architect"
+        - "ETL Developer"
+        - "ELT Developer"
+      # Optional location filters (leave empty for broad, keywords-only crawl).
+      # locations:
+      #   - "Germany"
+      #   - "Austria"
+      #   - "Switzerland"
+      #
+      # Optional cityId map. Used only when the matching location is set.
+      # city_ids:
+      #   Berlin: "2950159.e2912c"
+

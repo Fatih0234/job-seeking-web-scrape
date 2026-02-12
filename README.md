@@ -2,7 +2,10 @@
 
 Scrape job posting sites using **Scrapy + Playwright** (via `scrapy-playwright`).
 
-Current focus: **LinkedIn (guest/public jobs pages)**.
+Current focus:
+- **LinkedIn** (guest/public jobs pages)
+- **Stepstone** (Playwright-first list + detail scraping)
+- **XING** (Playwright-first discovery with show-more pagination)
 
 ## What Exists Today
 
@@ -39,6 +42,37 @@ Code:
 - `job_scrape/linkedin_detail.py` (detail HTML parsing)
 - `job_scrape/spiders/linkedin_first_job_detail.py` (end-to-end check spider)
 
+### 4) Stepstone discovery + details (DB pipeline)
+- YAML-driven Stepstone searches (keyword x location combinations) synced to `stepstone_search_definitions`.
+- Paginated discovery keeps only **main** jobs using `data-resultlist-offers-main-displayed`.
+- Detail scraping is Playwright-first to reduce WAF block failures.
+
+Code:
+- `configs/stepstone.yaml` (example config)
+- `job_scrape/stepstone.py` (URL building + counters + list parsing)
+- `job_scrape/stepstone_detail.py` (detail HTML parsing)
+- `job_scrape/spiders/stepstone_discovery_paginated.py`
+- `job_scrape/spiders/stepstone_job_detail_batch.py`
+- `scripts/sync_search_definitions_stepstone.py`
+- `scripts/run_discovery_stepstone.py`
+- `scripts/run_details_stepstone.py`
+- `scripts/run_crawl_stepstone.py`
+- `scripts/create_stepstone_tables.py`
+
+### 5) XING discovery (DB pipeline, v1)
+- YAML-driven XING searches (keywords, optional locations, optional `cityId`) synced to `search_definitions`.
+- Discovery is Playwright-first and paginates by repeatedly clicking **Show more**.
+- This milestone is discovery-only (no XING detail scraper yet).
+
+Code:
+- `configs/xing.yaml` (example config)
+- `job_scrape/xing_config.py` (config loader)
+- `job_scrape/xing.py` (URL building + list parsing helpers)
+- `job_scrape/spiders/xing_discovery_paginated.py`
+- `scripts/sync_search_definitions_xing.py`
+- `scripts/run_discovery_xing.py`
+- `scripts/run_crawl_xing.py`
+
 ## Setup
 
 From `/Volumes/T7/job-seeking-web-scrape`:
@@ -71,10 +105,50 @@ source .venv/bin/activate
 scrapy crawl linkedin_first_job_detail -O output/linkedin_first_job_detail.jsonl
 ```
 
+### Stepstone: sync search definitions
+```bash
+source .venv/bin/activate
+python -m scripts.sync_search_definitions_stepstone
+```
+
+### Stepstone: discovery + details orchestrated run
+```bash
+source .venv/bin/activate
+python -m scripts.run_crawl_stepstone
+```
+
+### Stepstone: report latest run
+```bash
+source .venv/bin/activate
+REPORT_SOURCE=stepstone python -m scripts.report_latest_run
+```
+
+### XING: sync search definitions
+```bash
+source .venv/bin/activate
+python -m scripts.sync_search_definitions_xing
+```
+
+### XING: discovery-only orchestrated run
+```bash
+source .venv/bin/activate
+python -m scripts.run_crawl_xing
+```
+
+### XING: report latest run
+```bash
+source .venv/bin/activate
+REPORT_SOURCE=xing python -m scripts.report_latest_run
+```
+
 ## Notes / Limitations
 - LinkedIn may rate-limit or block automation. We keep the system conservative, and we save debug artifacts (HTML + screenshots) under `output/` when needed.
 - "Every city in a country" is achieved by **omitting** `f_PP` (no city filter) while setting `geoId` to the country.
+- Stepstone may return `403 Access Denied` on non-browser requests; the Stepstone pipeline uses Playwright-first requests for both discovery and detail pages.
+- XING search URLs do not need `id`; the site auto-generates it on load.
+- XING `cityId` is optional; keywords-only and location-text-only queries are valid.
 
 ## Documentation
 - Project handoff / history / decisions: `docs/AI_HANDOFF.md`
 - Database ERD + read/write flows: `docs/DB_ERD_AND_FLOWS.md`
+- Stepstone implementation and runbook: `docs/STEPSTONE_SCRAPING.md`

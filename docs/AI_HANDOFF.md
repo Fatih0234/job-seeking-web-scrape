@@ -211,3 +211,52 @@ Smoke test detail parse:
 scrapy crawl linkedin_first_job_detail -O output/linkedin_first_job_detail.jsonl
 ```
 
+## 8) Stepstone Quickstart (Current Pipeline)
+
+Stepstone now runs on a dedicated pipeline and dedicated tables under `job_scrape`.
+
+Core docs:
+- `/Volumes/T7/job-seeking-web-scrape/docs/STEPSTONE_SCRAPING.md`
+
+### 8.1 One-time setup
+
+```bash
+source .venv/bin/activate
+python -m scripts.create_stepstone_tables
+python -m scripts.sync_search_definitions_stepstone
+```
+
+### 8.2 Run Stepstone crawl
+
+```bash
+source .venv/bin/activate
+python -m scripts.run_crawl_stepstone
+```
+
+Useful flags:
+- `RUN_DETAILS=0` for discovery-only runs
+- `MAX_JOB_DETAILS_PER_RUN=5` for smoke detail runs
+- `SYNC_SEARCH_DEFINITIONS_STEPSTONE=0` to skip YAML->DB sync
+
+### 8.3 Reporting and health check
+
+```bash
+source .venv/bin/activate
+REPORT_SOURCE=stepstone python -m scripts.report_latest_run
+```
+
+Primary Stepstone tables:
+- `job_scrape.stepstone_crawl_runs`
+- `job_scrape.stepstone_search_definitions`
+- `job_scrape.stepstone_search_runs`
+- `job_scrape.stepstone_jobs`
+- `job_scrape.stepstone_job_search_hits`
+- `job_scrape.stepstone_job_details`
+
+### 8.4 Scheduler
+
+GitHub Actions workflow:
+- `/Volumes/T7/job-seeking-web-scrape/.github/workflows/stepstone-crawl.yml`
+
+Cron:
+- Every 12 hours (UTC)
