@@ -2,8 +2,8 @@ name: LinkedIn Details
 
 on:
   schedule:
-    # Daily (UTC)
-    - cron: "30 3 * * *"
+    # Every 3 hours (UTC)
+    - cron: "15 */3 * * *"
   workflow_dispatch: {}
 
 jobs:
