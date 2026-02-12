@@ -55,7 +55,12 @@ jobs:
 
       - name: Run stepstone crawl
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
           CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
           RUN_DISCOVERY: "1"
           RUN_DETAILS: "1"
@@ -66,7 +71,12 @@ jobs:
       - name: Report latest run (stepstone)
         if: always()
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
           REPORT_SOURCE: stepstone
         run: |
           python -m scripts.report_latest_run
