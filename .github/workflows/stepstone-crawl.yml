@@ -19,7 +19,7 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 420
 
     steps:
       - name: Checkout
@@ -53,7 +53,7 @@ jobs:
             echo "SYNC_SEARCH_DEFINITIONS_STEPSTONE=1" >> "$GITHUB_ENV"
           fi
 
-      - name: Run stepstone crawl
+      - name: Run stepstone discovery
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
           SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -63,10 +63,38 @@ jobs:
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
           CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
           RUN_DISCOVERY: "1"
-          RUN_DETAILS: "1"
+          RUN_DETAILS: "0"
           ENSURE_STEPSTONE_TABLES: "1"
+          STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS: "1800"
+          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "21600"
+          STEPSTONE_STALE_RUNNING_MINUTES: "180"
         run: |
           python -m scripts.run_crawl_stepstone
+
+      - name: Run stepstone details catch-up
+        env:
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
+          STEPSTONE_CATCHUP_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_details_catchup' || 'github_manual_details_catchup' }}
+          STEPSTONE_CATCHUP_BATCH_SIZE: "500"
+          STEPSTONE_CATCHUP_MAX_BATCHES: "12"
+          STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT: "10"
+          STEPSTONE_CATCHUP_STALE_MINUTES: "60"
+          STEPSTONE_CATCHUP_SLEEP_SECONDS: "5"
+          STEPSTONE_DETAIL_CONCURRENCY: "2"
+          STEPSTONE_DETAIL_CONCURRENT_PER_DOMAIN: "2"
+          STEPSTONE_DETAIL_DOWNLOAD_DELAY_SECONDS: "1.5"
+          DETAIL_PROGRESS_TIMEOUT_SECONDS: "240"
+          DETAIL_SPIDER_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_DETAILS_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_STALE_RUNNING_MINUTES: "180"
+        run: |
+          python -m scripts.run_stepstone_details_catchup
 
       - name: Report latest run (stepstone)
         if: always()
