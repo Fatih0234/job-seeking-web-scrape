@@ -49,6 +49,15 @@ XING has a dedicated workflow (incremental, last 24 hours):
   - Overlap is intentional (12h schedule with 24h window); DB dedupe makes it safe.
   - XING job detail 410s are treated as expected churn and are marked inactive to avoid endless retries.
 
+XING details catch-up has a dedicated workflow (details-only):
+- Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/xing-details-catchup.yml`
+- Schedule: every 3 hours (UTC)
+- Behavior:
+  - runs `RUN_DISCOVERY=0`, `RUN_DETAILS=1` (no additional discovery load)
+  - `MAX_JOB_DETAILS_PER_RUN=100`
+  - `DETAIL_LAST_SEEN_WINDOW_DAYS=2` (bump to `7` if you see backlog growth)
+  - uses `concurrency.cancel-in-progress=true` to avoid overlapping runs
+
 Lifecycle maintenance has a dedicated workflow:
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/job-lifecycle-maintenance.yml`
 - Schedule: daily at `02:30 UTC`
