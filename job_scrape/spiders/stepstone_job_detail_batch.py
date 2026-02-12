@@ -42,6 +42,8 @@ class StepstoneJobDetailBatchSpider(scrapy.Spider):
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
         "DOWNLOAD_DELAY": 3.0,
+        # Prevent single stuck detail request from hanging long batch runs.
+        "DOWNLOAD_TIMEOUT": 60,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
     }
 
@@ -71,16 +73,66 @@ class StepstoneJobDetailBatchSpider(scrapy.Spider):
             yield scrapy.Request(
                 job_url,
                 callback=self.parse_detail,
+                errback=self.parse_error,
                 cb_kwargs={"job": j},
                 dont_filter=True,
                 meta={
                     "playwright": True,
+                    "playwright_page_goto_kwargs": {"timeout": 60_000},
+                    "job": j,
                     "playwright_include_page": True,
                     "playwright_page_methods": [
                         PageMethod("wait_for_timeout", 1200),
                     ],
                 },
             )
+
+    async def parse_error(self, failure):
+        req = failure.request
+        job = req.meta.get("job") or {}
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        page = req.meta.get("playwright_page")
+
+        response = getattr(getattr(failure, "value", None), "response", None)
+        status_code = getattr(response, "status", None)
+        blocked = status_code in {403, 429, 503}
+
+        if blocked:
+            self._block_streak += 1
+            if self._block_streak >= self._block_streak_limit:
+                try:
+                    self.crawler.engine.close_spider(self, reason="blocked_circuit_breaker")
+                except Exception:
+                    pass
+        else:
+            self._block_streak = 0
+
+        last_error = f"http_{status_code}" if status_code is not None else "request_failed"
+        if blocked:
+            last_error = "blocked"
+
+        try:
+            yield {
+                "record_type": "job_detail",
+                "crawl_run_id": self.crawl_run_id,
+                "source": "stepstone",
+                "job_id": job.get("job_id"),
+                "job_url": job.get("job_url"),
+                "scraped_at": fetched_at,
+                "parse_ok": False,
+                "blocked": bool(blocked),
+                "used_playwright": True,
+                "last_error": last_error,
+                "job_title": None,
+                "company_name": None,
+                "job_location": None,
+                "posted_time_ago": None,
+                "job_description": None,
+                "criteria": {},
+            }
+        finally:
+            if page:
+                await page.close()
 
     async def parse_detail(self, response: scrapy.http.Response, *, job: dict[str, Any]):
         fetched_at = datetime.now(timezone.utc).isoformat()

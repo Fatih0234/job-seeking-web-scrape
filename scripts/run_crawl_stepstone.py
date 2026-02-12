@@ -19,17 +19,24 @@ def _log(msg: str) -> None:
     print(f"[run_crawl_stepstone {ts}] {msg}", file=sys.stderr)
 
 
-def _run(cmd: list[str], *, env: dict[str, str] | None = None) -> str:
+def _run(cmd: list[str], *, env: dict[str, str] | None = None, timeout_seconds: int | None = None) -> str:
     try:
-        out = subprocess.check_output(cmd, text=True, env=env)
+        out = subprocess.check_output(cmd, text=True, env=env, timeout=timeout_seconds)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Command failed (exit={e.returncode}): {' '.join(cmd)}") from e
+    except subprocess.TimeoutExpired as e:
+        t = timeout_seconds if timeout_seconds is not None else "unknown"
+        raise RuntimeError(f"Command timed out after {t}s: {' '.join(cmd)}") from e
     return out.strip()
 
 
 def main() -> None:
+    bootstrap_timeout = int(os.getenv("STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS", "900"))
+    discovery_timeout = int(os.getenv("STEPSTONE_DISCOVERY_TIMEOUT_SECONDS", "21600"))
+    details_timeout = int(os.getenv("STEPSTONE_DETAILS_TIMEOUT_SECONDS", "21600"))
+
     if os.getenv("ENSURE_STEPSTONE_TABLES", "1") == "1":
-        _run([sys.executable, "-m", "scripts.create_stepstone_tables"])
+        _run([sys.executable, "-m", "scripts.create_stepstone_tables"], timeout_seconds=bootstrap_timeout)
 
     trigger = os.getenv("CRAWL_TRIGGER", "manual")
     crawl_run_id = create_crawl_run(trigger)
@@ -45,7 +52,7 @@ def main() -> None:
 
         if run_discovery and os.getenv("SYNC_SEARCH_DEFINITIONS_STEPSTONE", "1") == "1":
             _log("syncing Stepstone YAML search definitions into DB (scripts.sync_search_definitions_stepstone)")
-            _run([sys.executable, "-m", "scripts.sync_search_definitions_stepstone"])
+            _run([sys.executable, "-m", "scripts.sync_search_definitions_stepstone"], timeout_seconds=bootstrap_timeout)
 
         if run_discovery:
             searches = load_enabled_searches()
@@ -62,13 +69,21 @@ def main() -> None:
 
         if run_discovery:
             _log("running discovery (scripts.run_discovery_stepstone)")
-            discovery_out = _run([sys.executable, "-m", "scripts.run_discovery_stepstone"], env=env)
+            discovery_out = _run(
+                [sys.executable, "-m", "scripts.run_discovery_stepstone"],
+                env=env,
+                timeout_seconds=discovery_timeout,
+            )
             discovery_stats = json.loads(discovery_out)
             _log(f"discovery done status={discovery_stats.get('status')!r}")
 
         if run_details:
             _log("running details (scripts.run_details_stepstone)")
-            details_out = _run([sys.executable, "-m", "scripts.run_details_stepstone"], env=env)
+            details_out = _run(
+                [sys.executable, "-m", "scripts.run_details_stepstone"],
+                env=env,
+                timeout_seconds=details_timeout,
+            )
             details_stats = json.loads(details_out)
             _log(f"details done status={details_stats.get('status')!r}")
 

@@ -233,6 +233,18 @@ Discovery-only run:
 RUN_DETAILS=0 python -m scripts.run_crawl_stepstone
 ```
 
+Full details catch-up (watchdog + auto-restart batches):
+```bash
+python -m scripts.run_stepstone_details_catchup
+```
+
+Optional catch-up tuning env vars:
+- `STEPSTONE_CATCHUP_BATCH_SIZE` (default `300`)
+- `STEPSTONE_CATCHUP_MAX_BATCHES` (default `100`)
+- `STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS` (default `10800`)
+- `STEPSTONE_CATCHUP_STALE_MINUTES` (default `45`)
+- `STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT` (default `3`)
+
 Report latest Stepstone run:
 ```bash
 REPORT_SOURCE=stepstone python -m scripts.report_latest_run

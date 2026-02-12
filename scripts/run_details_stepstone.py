@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +15,22 @@ from scripts.db import connect, now_utc_iso
 def _log(msg: str) -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"[run_details_stepstone {ts}] {msg}", file=sys.stderr)
+
+
+def _stop_process_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except Exception:
+        return
+    try:
+        proc.wait(timeout=10)
+        return
+    except Exception:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        pass
 
 
 def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_hours: int) -> list[dict]:
@@ -51,6 +69,8 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
     env = os.environ.copy()
     env.setdefault("DETAIL_DEBUG_FAILURE_LIMIT", "5")
     env.setdefault("CIRCUIT_BREAKER_BLOCKS", "3")
+    spider_timeout_seconds = int(env.get("DETAIL_SPIDER_TIMEOUT_SECONDS", "7200"))
+    progress_timeout_seconds = int(env.get("DETAIL_PROGRESS_TIMEOUT_SECONDS", "240"))
 
     cmd = [
         sys.executable,
@@ -67,21 +87,58 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
         "-s",
         "LOG_LEVEL=INFO",
     ]
-    try:
-        subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Stepstone detail spider failed (exit={e.returncode}). See Scrapy logs above.") from e
+    proc = subprocess.Popen(
+        cmd,
+        env=env,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+        start_new_session=True,
+    )
+
+    started = time.monotonic()
+    last_progress = started
+    last_size = -1
+    while True:
+        now = time.monotonic()
+        size = out_jsonl.stat().st_size if out_jsonl.exists() else 0
+        if size > last_size:
+            last_size = size
+            last_progress = now
+
+        rc = proc.poll()
+        if rc is not None:
+            if rc != 0:
+                raise RuntimeError(f"Stepstone detail spider failed (exit={rc}). See Scrapy logs above.")
+            break
+
+        if now - started > spider_timeout_seconds:
+            _stop_process_group(proc)
+            raise RuntimeError(
+                f"Stepstone detail spider timed out after {spider_timeout_seconds}s; aborting this batch safely."
+            )
+
+        if now - last_progress > progress_timeout_seconds:
+            _stop_process_group(proc)
+            raise RuntimeError(
+                f"Stepstone detail spider made no output progress for {progress_timeout_seconds}s; "
+                "aborting this batch safely."
+            )
+
+        time.sleep(5)
 
     return inputs_path
 
 
 def import_results(jsonl_path: Path) -> dict:
     cmd = [sys.executable, "-m", "scripts.import_details_stepstone", str(jsonl_path)]
+    timeout_seconds = int(os.getenv("DETAIL_IMPORT_TIMEOUT_SECONDS", "1800"))
     try:
-        out = subprocess.check_output(cmd, text=True)
+        out = subprocess.check_output(cmd, text=True, timeout=timeout_seconds)
         return json.loads(out.strip())
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"import_details_stepstone failed (exit={e.returncode}).") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"import_details_stepstone timed out after {timeout_seconds}s.") from e
     except json.JSONDecodeError as e:
         raise RuntimeError("import_details_stepstone did not return valid JSON") from e
 
@@ -104,11 +161,24 @@ def main() -> None:
 
     _log(f"selected {len(jobs)} jobs for details")
     out_jsonl = Path("output") / f"stepstone_details_{crawl_run_id}.jsonl"
-    run_spider(crawl_run_id=crawl_run_id, jobs=jobs, out_jsonl=out_jsonl)
+    spider_error: str | None = None
+    try:
+        run_spider(crawl_run_id=crawl_run_id, jobs=jobs, out_jsonl=out_jsonl)
+    except Exception as e:
+        spider_error = str(e)
+        _log(f"detail spider ended with error; attempting partial import if available: {spider_error}")
+
+    if not out_jsonl.exists() or out_jsonl.stat().st_size <= 0:
+        if spider_error:
+            raise RuntimeError(spider_error)
+        raise RuntimeError("detail spider produced no output JSONL")
 
     stats = import_results(out_jsonl)
     stats.setdefault("counts", {})
     stats["counts"]["detail_jobs_selected"] = len(jobs)
+    if spider_error:
+        stats["status"] = "failed"
+        stats["error"] = spider_error
     _log(
         "imported details "
         f"parse_ok={int(stats.get('counts', {}).get('detail_parse_ok', 0) or 0)} "
