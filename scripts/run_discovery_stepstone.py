@@ -21,6 +21,41 @@ def _log(msg: str) -> None:
     print(f"[run_discovery_stepstone {ts}] {msg}", file=sys.stderr)
 
 
+def _apply_age_days_override(searches: list[dict]) -> None:
+    """
+    Override Stepstone discovery window without re-syncing DB definitions.
+
+    Env:
+    - STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE:
+      - empty: no override
+      - 1 or 7: force age_days to that value for all searches
+      - 0: remove age_days (Any time)
+    """
+    raw = (os.getenv("STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE") or "").strip()
+    if not raw:
+        return
+
+    try:
+        n = int(raw)
+    except ValueError as e:
+        raise ValueError(f"Invalid STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE={raw!r} (expected int)") from e
+
+    if n not in {0, 1, 7}:
+        raise ValueError(f"Unsupported STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE={n} (expected 0, 1, or 7)")
+
+    for s in searches:
+        facets = s.get("facets") or {}
+        if not isinstance(facets, dict):
+            facets = {}
+        if n == 0:
+            facets.pop("age_days", None)
+        else:
+            facets["age_days"] = n
+        s["facets"] = facets
+
+    _log(f"applied STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE={n} to searches={len(searches)}")
+
+
 def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> Path:
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     inputs_path = write_discovery_inputs(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
@@ -79,6 +114,7 @@ def main() -> None:
         if not searches:
             raise SystemExit("No enabled stepstone search_definitions found; run scripts/sync_search_definitions_stepstone.py first")
 
+        _apply_age_days_override(searches)
         create_search_runs(crawl_run_id, searches)
 
         out_jsonl = Path("output") / f"stepstone_discovery_{crawl_run_id}.jsonl"
@@ -96,6 +132,7 @@ def main() -> None:
             finish_crawl_run(crawl_run_id, status="failed", stats={}, error="No enabled stepstone search_definitions found")
             raise SystemExit("No enabled stepstone search_definitions found; run scripts/sync_search_definitions_stepstone.py first")
 
+        _apply_age_days_override(searches)
         create_search_runs(crawl_run_id, searches)
 
         out_jsonl = Path("output") / f"stepstone_discovery_{crawl_run_id}.jsonl"

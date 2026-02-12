@@ -7,8 +7,11 @@ Stepstone implementation details and operator runbook:
 
 ## Prerequisites
 
-- Add a GitHub Actions secret named `SUPABASE_DB_URL`.
-  - Format example is in `/Volumes/T7/job-seeking-web-scrape/.env.example`.
+- Add database GitHub Actions secrets used by workflows:
+- `SUPABASE_DB_URL` (single connection string), or
+- `SUPABASE_HOST`, `SUPABASE_PORT`, `SUPABASE_DATABASE`, `SUPABASE_USER`, `SUPABASE_PASSWORD` (recommended; assembled in code)
+- Optional: `SUPABASE_SSLMODE` (defaults to `require`)
+- Format examples are in `/Volumes/T7/job-seeking-web-scrape/.env.example`.
 
 ## Workflow
 
@@ -26,6 +29,11 @@ Stepstone has a dedicated workflow:
   - Optional input `sync_search_definitions_stepstone`:
     - `true`: runs `scripts/sync_search_definitions_stepstone.py` first
     - `false`: skips sync and uses existing `job_scrape.stepstone_search_definitions` rows
+
+Stepstone also has a weekly safety-net backfill workflow:
+- Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/stepstone-backfill.yml`
+- Schedule: weekly (UTC)
+- Uses `STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE=7` to widen discovery without re-syncing definitions.
 
 ## Discovery-Only Mode
 

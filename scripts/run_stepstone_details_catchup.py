@@ -6,8 +6,10 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from scripts.db import connect
+from scripts.stepstone_crawl_common import fail_running_search_runs, finish_crawl_run
 
 
 def _log(msg: str) -> None:
@@ -15,7 +17,26 @@ def _log(msg: str) -> None:
     print(f"[run_stepstone_details_catchup {ts}] {msg}", file=sys.stderr)
 
 
+def _detail_last_seen_window_days() -> int:
+    return int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS") or os.getenv("STEPSTONE_CATCHUP_DETAIL_LAST_SEEN_WINDOW_DAYS") or "60")
+
+
+def _detail_staleness_days() -> int:
+    # Catch-up is primarily to fill missing details; avoid constant refresh churn by default.
+    return int(os.getenv("DETAIL_STALENESS_DAYS") or os.getenv("STEPSTONE_CATCHUP_DETAIL_STALENESS_DAYS") or "365")
+
+
+def _detail_blocked_retry_hours() -> int:
+    return int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS") or os.getenv("STEPSTONE_CATCHUP_DETAIL_BLOCKED_RETRY_HOURS") or "24")
+
+
 def _missing_details_count() -> int:
+    """
+    Count remaining detail work using the same selection constraints as run_details_stepstone.
+    """
+    last_seen_window_days = _detail_last_seen_window_days()
+    staleness_days = _detail_staleness_days()
+    blocked_retry_hours = _detail_blocked_retry_hours()
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -24,11 +45,55 @@ def _missing_details_count() -> int:
                   from job_scrape.stepstone_jobs j
                   left join job_scrape.stepstone_job_details d
                     on d.job_id = j.job_id
-                 where d.job_id is null
+                 where j.last_seen_at > now() - (%s || ' days')::interval
+                   and (
+                        d.job_id is null
+                        or d.scraped_at < now() - (%s || ' days')::interval
+                        or (
+                            d.last_error = 'blocked'
+                            and d.scraped_at < now() - (%s || ' hours')::interval
+                        )
+                   )
                 """
+                ,
+                (str(last_seen_window_days), str(staleness_days), str(blocked_retry_hours)),
             )
             (n,) = cur.fetchone()
     return int(n or 0)
+
+
+def _finalize_stale_run_from_details_jsonl(*, run_id: str, details_jsonl: Path) -> None:
+    """
+    Import a completed details JSONL and finalize a stale crawl_run.
+
+    Note: On GitHub Actions, stale runs typically won't have their JSONL present on the next runner.
+    This recovery path mainly helps long-running local/VM executions where output/ persists.
+    """
+    timeout_seconds = int(os.getenv("DETAIL_IMPORT_TIMEOUT_SECONDS", "1800"))
+    cmd = [sys.executable, "-m", "scripts.import_details_stepstone", str(details_jsonl)]
+    out = subprocess.check_output(cmd, text=True, timeout=timeout_seconds)
+    imp = json.loads(out.strip())
+
+    details_status = str(imp.get("status") or "unknown")
+    crawl_status = "success"
+    crawl_error = None
+    if details_status == "blocked":
+        crawl_status = "blocked"
+    if details_status == "failed":
+        crawl_status = "failed"
+        crawl_error = str(imp.get("error") or "details import reported failed during stale recovery")
+
+    stats = {
+        "discovery": {"status": "skipped"},
+        "details": {k: v for k, v in imp.items() if k != "crawl_run_id"},
+    }
+
+    try:
+        fail_running_search_runs(run_id, error="stale recovery finalize")
+    except Exception:
+        pass
+
+    finish_crawl_run(run_id, status=crawl_status, stats=stats, error=crawl_error)
 
 
 def _cleanup_stale_running_runs(*, stale_minutes: int) -> list[str]:
@@ -47,32 +112,36 @@ def _cleanup_stale_running_runs(*, stale_minutes: int) -> list[str]:
                 (str(stale_minutes),),
             )
             run_ids = [str(r[0]) for r in cur.fetchall()]
-
-            for run_id in run_ids:
-                cur.execute(
-                    """
-                    update job_scrape.stepstone_search_runs
-                       set status = 'failed',
-                           finished_at = now(),
-                           error = coalesce(error, 'watchdog stale cleanup')
-                     where crawl_run_id = %s
-                       and status = 'running'
-                    """,
-                    (run_id,),
-                )
-                cur.execute(
-                    """
-                    update job_scrape.stepstone_crawl_runs
-                       set status = 'failed',
-                           finished_at = now(),
-                           error = coalesce(error, 'watchdog stale cleanup')
-                     where id = %s
-                    """,
-                    (run_id,),
-                )
         conn.commit()
 
-    return run_ids
+    cleaned: list[str] = []
+    for run_id in run_ids:
+        details_jsonl = Path("output") / f"stepstone_details_{run_id}.jsonl"
+        if details_jsonl.exists() and details_jsonl.stat().st_size > 0:
+            try:
+                _log(f"stale recovery: importing {details_jsonl}")
+                _finalize_stale_run_from_details_jsonl(run_id=run_id, details_jsonl=details_jsonl)
+                cleaned.append(run_id)
+                continue
+            except Exception as e:
+                reason = f"watchdog stale recovery import failed: {e}"
+                try:
+                    fail_running_search_runs(run_id, error=reason)
+                except Exception:
+                    pass
+                finish_crawl_run(run_id, status="failed", stats={}, error=reason)
+                cleaned.append(run_id)
+                continue
+
+        reason = "watchdog stale cleanup (no completed details JSONL available)"
+        try:
+            fail_running_search_runs(run_id, error=reason)
+        except Exception:
+            pass
+        finish_crawl_run(run_id, status="failed", stats={}, error=reason)
+        cleaned.append(run_id)
+
+    return cleaned
 
 
 def _run_single_batch(*, batch_size: int, timeout_seconds: int, trigger: str) -> dict:
@@ -84,6 +153,9 @@ def _run_single_batch(*, batch_size: int, timeout_seconds: int, trigger: str) ->
     env.setdefault("ENSURE_STEPSTONE_TABLES", "0")
     env["MAX_JOB_DETAILS_PER_RUN"] = str(batch_size)
     env["CRAWL_TRIGGER"] = trigger
+    env.setdefault("DETAIL_LAST_SEEN_WINDOW_DAYS", str(_detail_last_seen_window_days()))
+    env.setdefault("DETAIL_STALENESS_DAYS", str(_detail_staleness_days()))
+    env.setdefault("DETAIL_BLOCKED_RETRY_HOURS", str(_detail_blocked_retry_hours()))
     # Keep details-script timeout aligned with outer batch timeout.
     env.setdefault("STEPSTONE_DETAILS_TIMEOUT_SECONDS", str(timeout_seconds))
 
@@ -113,8 +185,15 @@ def main() -> None:
     batch_timeout_seconds = int(os.getenv("STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS", "10800"))
     sleep_seconds = int(os.getenv("STEPSTONE_CATCHUP_SLEEP_SECONDS", "5"))
     trigger = os.getenv("STEPSTONE_CATCHUP_TRIGGER", "manual_full_details_batch")
+    strict = (os.getenv("STEPSTONE_CATCHUP_STRICT", "0") or "0").strip().lower() in {"1", "true", "yes"}
 
     missing_initial = _missing_details_count()
+    _log(
+        "selection constraints "
+        f"DETAIL_LAST_SEEN_WINDOW_DAYS={_detail_last_seen_window_days()} "
+        f"DETAIL_STALENESS_DAYS={_detail_staleness_days()} "
+        f"DETAIL_BLOCKED_RETRY_HOURS={_detail_blocked_retry_hours()}"
+    )
     _log(
         f"start missing={missing_initial} batch_size={batch_size} max_batches={max_batches} "
         f"no_progress_limit={no_progress_limit}"
@@ -123,6 +202,7 @@ def main() -> None:
     no_progress_streak = 0
     batches_run = 0
     batches_failed = 0
+    blocked_encountered = False
 
     while batches_run < max_batches:
         stale_ids = _cleanup_stale_running_runs(stale_minutes=stale_minutes)
@@ -144,6 +224,11 @@ def main() -> None:
             )
             status = str(result.get("status", "unknown"))
             _log(f"batch={batches_run} crawl_status={status}")
+            if status == "blocked":
+                blocked_encountered = True
+            if status == "failed":
+                batches_failed += 1
+                no_progress_streak += 1
         except subprocess.TimeoutExpired:
             batches_failed += 1
             no_progress_streak += 1
@@ -165,6 +250,10 @@ def main() -> None:
         delta = missing_before - missing_after
         _log(f"batch={batches_run} missing_after={missing_after} delta={delta}")
 
+        if blocked_encountered:
+            _log("blocked detected; stopping catch-up early to retry later")
+            break
+
         if delta <= 0:
             no_progress_streak += 1
         else:
@@ -177,18 +266,23 @@ def main() -> None:
         time.sleep(sleep_seconds)
 
     missing_final = _missing_details_count()
-    status = "success" if missing_final == 0 else "partial"
+    status = "success" if missing_final == 0 else ("blocked" if blocked_encountered else "partial")
     out = {
         "status": status,
         "missing_initial": missing_initial,
         "missing_final": missing_final,
+        "selection_constraints": {
+            "detail_last_seen_window_days": _detail_last_seen_window_days(),
+            "detail_staleness_days": _detail_staleness_days(),
+            "detail_blocked_retry_hours": _detail_blocked_retry_hours(),
+        },
         "batches_run": batches_run,
         "batches_failed": batches_failed,
         "no_progress_streak": no_progress_streak,
     }
     print(json.dumps(out, ensure_ascii=False))
 
-    if status != "success":
+    if strict and status != "success":
         raise SystemExit(2)
 
 
