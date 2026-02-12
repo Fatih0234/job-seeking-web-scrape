@@ -1,0 +1,198 @@
+name: Geocode Enrichment
+
+concurrency:
+  group: geocode-enrichment-${{ github.ref_name || 'default' }}
+  cancel-in-progress: false
+
+on:
+  workflow_run:
+    workflows:
+      - LinkedIn Crawl
+      - LinkedIn Details
+      - Stepstone Crawl
+    types:
+      - completed
+  schedule:
+    # Daily safety net at 03:50 UTC
+    - cron: "50 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  geocode:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+      SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+      SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+      SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+      SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
+      GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
+      GEOCODE_ENSURE_SCHEMA: "0"
+      GEOCODE_SEED_CACHE: "1"
+      GEOCODE_MAX_LOCATIONS_PER_RUN: "300"
+      GEOAPIFY_BATCH_SIZE: "100"
+      GEOAPIFY_POLL_TIMEOUT_SECONDS: "120"
+      GEOCODE_MAX_ATTEMPTS: "6"
+      GEOCODE_RETRY_BASE_MINUTES: "60"
+      GEOCODE_RETRY_MAX_MINUTES: "10080"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure dashboard and geocode schema
+        run: |
+          python -m scripts.create_dashboard_view
+          python -m scripts.ensure_geocode_schema
+
+      - name: Preflight geocode work check
+        id: preflight
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.db import connect
+
+          max_attempts = int(os.getenv("GEOCODE_MAX_ATTEMPTS", "6"))
+
+          with connect() as conn:
+            with conn.cursor() as cur:
+              cur.execute(
+                """
+                with src as (
+                  select distinct
+                    lower(
+                      trim(
+                        regexp_replace(
+                          regexp_replace(trim(job_location), '\\s+', ' ', 'g'),
+                          '\\s*,\\s*',
+                          ', ',
+                          'g'
+                        )
+                      )
+                    ) as location_text_norm,
+                    case
+                      when platform in ('linkedin', 'stepstone') then 'de'
+                      when platform = 'xing' then 'de,at,ch'
+                      else 'de,at,ch'
+                    end as country_scope
+                  from job_scrape.jobs_dashboard_v
+                  where nullif(trim(job_location), '') is not null
+                ),
+                missing as (
+                  select count(*)::bigint as n
+                  from src s
+                  left join job_scrape.location_geocode_cache c
+                    on c.provider = 'geoapify'
+                   and c.location_text_norm = s.location_text_norm
+                   and c.country_scope = s.country_scope
+                  where c.id is null
+                ),
+                retryable as (
+                  select count(*)::bigint as n
+                  from job_scrape.location_geocode_cache c
+                  where c.provider = 'geoapify'
+                    and c.status in ('pending', 'error', 'no_match')
+                    and c.next_retry_at <= now()
+                    and c.attempt_count < %s
+                )
+                select
+                  (select n from missing) as missing_count,
+                  (select n from retryable) as retryable_count
+                """,
+                (max_attempts,),
+              )
+              missing_count, retryable_count = cur.fetchone()
+
+          missing_count = int(missing_count or 0)
+          retryable_count = int(retryable_count or 0)
+          work_count = missing_count + retryable_count
+
+          print(
+            f"preflight: work_count={work_count} missing_count={missing_count} retryable_count={retryable_count}"
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"work_count={work_count}\n")
+            fh.write(f"missing_count={missing_count}\n")
+            fh.write(f"retryable_count={retryable_count}\n")
+          PY
+
+      - name: Run geocode enrichment
+        if: ${{ steps.preflight.outputs.work_count != '0' }}
+        run: |
+          python -m scripts.geocode_locations_geoapify
+
+      - name: Skip geocode enrichment (no work)
+        if: ${{ steps.preflight.outputs.work_count == '0' }}
+        run: |
+          echo "No pending geocode work. Skipping Geoapify call."
+
+      - name: Refresh map view
+        run: |
+          python -m scripts.create_dashboard_map_view
+
+      - name: Emit cache and coverage summary
+        run: |
+          python - <<'PY'
+          import json
+          from scripts.db import connect
+
+          with connect() as conn:
+            with conn.cursor() as cur:
+              cur.execute(
+                """
+                select status, count(*)::bigint
+                from job_scrape.location_geocode_cache
+                group by status
+                order by status
+                """
+              )
+              status_counts = {str(status): int(count) for status, count in cur.fetchall()}
+
+              cur.execute(
+                """
+                select
+                  platform,
+                  count(*)::bigint as jobs_total,
+                  count(*) filter (where is_geocoded)::bigint as geocoded_jobs
+                from job_scrape.jobs_dashboard_map_v
+                group by platform
+                order by platform
+                """
+              )
+              coverage = []
+              for platform, jobs_total, geocoded_jobs in cur.fetchall():
+                jobs_total = int(jobs_total or 0)
+                geocoded_jobs = int(geocoded_jobs or 0)
+                pct = round((100.0 * geocoded_jobs / jobs_total), 2) if jobs_total else 0.0
+                coverage.append(
+                  {
+                    "platform": str(platform),
+                    "jobs_total": jobs_total,
+                    "geocoded_jobs": geocoded_jobs,
+                    "geocoded_pct": pct,
+                  }
+                )
+
+          print(
+            json.dumps(
+              {
+                "cache_status_counts": status_counts,
+                "map_coverage_by_platform": coverage,
+              },
+              ensure_ascii=False,
+            )
+          )
+          PY
