@@ -36,6 +36,21 @@ def _as_str_list(value: Any, *, field: str) -> tuple[str, ...]:
     raise ValueError(f"{field} must be a list of strings (or a single string)")
 
 
+def _normalize_keywords(keywords: tuple[str, ...], *, field: str) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for idx, keyword in enumerate(keywords):
+        normalized = " ".join(keyword.split())
+        if not normalized:
+            raise ValueError(f"{field}[{idx}] cannot be empty")
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(normalized)
+    return tuple(out)
+
+
 def _as_str_map(value: Any, *, field: str) -> dict[str, str]:
     if value is None:
         return {}
@@ -69,7 +84,10 @@ def load_xing_config(path: str | Path) -> XingConfig:
             raise ValueError(f"Invalid search at index {i}: must be a mapping")
 
         name = _as_str(sr.get("name", f"search_{i}"), field=f"xing.searches[{i}].name")
-        keywords = _as_str_list(sr.get("keywords"), field=f"xing.searches[{i}].keywords")
+        keywords = _normalize_keywords(
+            _as_str_list(sr.get("keywords"), field=f"xing.searches[{i}].keywords"),
+            field=f"xing.searches[{i}].keywords",
+        )
         locations = _as_str_list(sr.get("locations"), field=f"xing.searches[{i}].locations")
         city_ids = _as_str_map(sr.get("city_ids"), field=f"xing.searches[{i}].city_ids")
 
@@ -97,4 +115,3 @@ def load_xing_config(path: str | Path) -> XingConfig:
         )
 
     return XingConfig(searches=tuple(searches))
-

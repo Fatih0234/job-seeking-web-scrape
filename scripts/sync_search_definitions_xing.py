@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-from job_scrape.xing_config import load_xing_config
+from job_scrape.xing_config import XingConfig, load_xing_config
 from scripts.db import connect
 
 
@@ -36,32 +36,28 @@ def upsert_search_definition(row: dict[str, Any]) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                insert into job_scrape.search_definitions
-                  (name, source, enabled, keywords, country_name, geo_id, location_text, facets, cities_mode, cities)
+                insert into job_scrape.xing_search_definitions
+                  (name, enabled, keywords, country_name, location_text, facets)
                 values
-                  (%(name)s, %(source)s, %(enabled)s, %(keywords)s, %(country_name)s, %(geo_id)s, %(location_text)s, %(facets)s::jsonb, %(cities_mode)s, %(cities)s::jsonb)
+                  (%(name)s, %(enabled)s, %(keywords)s, %(country_name)s, %(location_text)s, %(facets)s::jsonb)
                 on conflict (name) do update set
                   enabled = excluded.enabled,
                   keywords = excluded.keywords,
                   country_name = excluded.country_name,
-                  geo_id = excluded.geo_id,
                   location_text = excluded.location_text,
                   facets = excluded.facets,
-                  cities_mode = excluded.cities_mode,
-                  cities = excluded.cities
+                  updated_at = now()
                 """,
                 {
                     **row,
                     "facets": json.dumps(row["facets"]),
-                    "cities": json.dumps(row.get("cities") or []),
                 },
             )
         conn.commit()
 
 
-def main() -> None:
-    cfg = load_xing_config("configs/xing.yaml")
-
+def iter_search_definition_rows(cfg: XingConfig) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for search in cfg.searches:
         city_ids = search.city_ids or {}
         if search.locations:
@@ -79,19 +75,14 @@ def main() -> None:
                         kw_idx=kw_idx,
                         keyword=kw,
                     )
-                    upsert_search_definition(
+                    rows.append(
                         {
                             "name": name,
-                            "source": "xing",
                             "enabled": True,
                             "keywords": kw,
-                            # Shared search_definitions currently requires NOT NULL country_name.
                             "country_name": "",
-                            "geo_id": None,
                             "location_text": location,
                             "facets": facets,
-                            "cities_mode": "country_only",
-                            "cities": [],
                         }
                     )
             continue
@@ -104,22 +95,23 @@ def main() -> None:
                 kw_idx=kw_idx,
                 keyword=kw,
             )
-            upsert_search_definition(
+            rows.append(
                 {
                     "name": name,
-                    "source": "xing",
                     "enabled": True,
                     "keywords": kw,
-                    # Shared search_definitions currently requires NOT NULL country_name.
                     "country_name": "",
-                    "geo_id": None,
-                    # XING keywords-only search: keep location blank to omit location URL param.
                     "location_text": "",
                     "facets": {"pagination_mode": "show_more"},
-                    "cities_mode": "country_only",
-                    "cities": [],
                 }
             )
+    return rows
+
+
+def main() -> None:
+    cfg = load_xing_config("configs/xing.yaml")
+    for row in iter_search_definition_rows(cfg):
+        upsert_search_definition(row)
 
     print("synced_search_definitions_xing_ok")
 

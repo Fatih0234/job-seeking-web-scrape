@@ -1,0 +1,116 @@
+name: XING Crawl (Last 24 Hours)
+
+concurrency:
+  group: xing-crawl-last24h-${{ github.ref_name }}
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Every 12 hours (UTC)
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      sync_search_definitions_xing:
+        description: "Sync XING YAML search definitions into DB before crawling"
+        required: false
+        default: true
+        type: boolean
+      run_details:
+        description: "Run details scraping after discovery"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Configure run flags
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions_xing }}" = "true" ]; then
+            echo "SYNC_SEARCH_DEFINITIONS_XING=1" >> "$GITHUB_ENV"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.sync_search_definitions_xing }}" = "false" ]; then
+            echo "SYNC_SEARCH_DEFINITIONS_XING=0" >> "$GITHUB_ENV"
+          else
+            echo "SYNC_SEARCH_DEFINITIONS_XING=1" >> "$GITHUB_ENV"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.run_details }}" = "false" ]; then
+            echo "RUN_DETAILS=0" >> "$GITHUB_ENV"
+          else
+            echo "RUN_DETAILS=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run XING crawl (incremental)
+        env:
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
+
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_last24h' || 'github_manual_last24h' }}
+          ENSURE_XING_TABLES: "1"
+          RUN_DISCOVERY: "1"
+
+          # Incremental search filter: only results from the last 24 hours.
+          XING_SINCE_PERIOD: LAST_24_HOURS
+
+          # Safety caps
+          MAX_PAGES_PER_SEARCH: "20"
+          MAX_JOBS_DISCOVERED_PER_SEARCH: "800"
+          DUPLICATE_PAGE_LIMIT: "3"
+          CIRCUIT_BREAKER_BLOCKS: "3"
+
+          # Detail scraping caps
+          MAX_JOB_DETAILS_PER_RUN: "100"
+          DETAIL_LAST_SEEN_WINDOW_DAYS: "2"
+          DETAIL_STALENESS_DAYS: "14"
+        run: |
+          python -m scripts.run_crawl_xing
+
+      - name: Report latest run (XING)
+        if: always()
+        env:
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+          SUPABASE_DATABASE: ${{ secrets.SUPABASE_DATABASE }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
+          REPORT_SOURCE: xing
+        run: |
+          python -m scripts.report_latest_run
+
+      - name: Upload artifacts (output/)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-xing
+          path: output/**
+          if-no-files-found: warn
+

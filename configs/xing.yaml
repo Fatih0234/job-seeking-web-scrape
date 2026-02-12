@@ -8,8 +8,15 @@ xing:
         - "Analytics Engineer"
         - "Data Platform Engineer"
         - "Data Architect"
+        - "Data Infrastructure Engineer"
+        - "Data Pipeline Engineer"
         - "ETL Developer"
         - "ELT Developer"
+        - "Database Developer"
+        - "SQL Developer"
+        - "Big Data Engineer"
+        - "Cloud Data Engineer"
+        - "Data DevOps Engineer"
       # Optional location filters (leave empty for broad, keywords-only crawl).
       # locations:
       #   - "Germany"
@@ -19,4 +26,3 @@ xing:
       # Optional cityId map. Used only when the matching location is set.
       # city_ids:
       #   Berlin: "2950159.e2912c"
-

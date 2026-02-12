@@ -48,6 +48,49 @@ xing:
             self.assertEqual(s.locations, ("Germany",))
             self.assertEqual(s.city_ids, {"Germany": "123.abc"})
 
+    def test_keywords_dedup_case_insensitive_preserves_first_seen_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "cfg.yaml"
+            p.write_text(
+                """
+xing:
+  searches:
+    - name: s1
+      keywords:
+        - "Data Engineer"
+        - "data engineer"
+        - "Data Platform Engineer"
+        - "DATA PLATFORM ENGINEER"
+        - "Data Engineering"
+""".lstrip(),
+                encoding="utf-8",
+            )
+            cfg = load_xing_config(p)
+            s = cfg.searches[0]
+            self.assertEqual(
+                s.keywords,
+                ("Data Engineer", "Data Platform Engineer", "Data Engineering"),
+            )
+
+    def test_keywords_dedup_normalizes_whitespace(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "cfg.yaml"
+            p.write_text(
+                """
+xing:
+  searches:
+    - name: s1
+      keywords:
+        - "  Data   Engineer  "
+        - "data engineer"
+        - "  ETL   Developer"
+""".lstrip(),
+                encoding="utf-8",
+            )
+            cfg = load_xing_config(p)
+            s = cfg.searches[0]
+            self.assertEqual(s.keywords, ("Data Engineer", "ETL Developer"))
+
     def test_city_ids_requires_locations(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "cfg.yaml"
@@ -87,4 +130,3 @@ xing:
 
 if __name__ == "__main__":
     unittest.main()
-
