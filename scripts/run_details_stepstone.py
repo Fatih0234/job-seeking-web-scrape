@@ -33,16 +33,44 @@ def _stop_process_group(proc: subprocess.Popen) -> None:
         pass
 
 
-def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_hours: int) -> list[dict]:
+def _apply_scrapy_speed_overrides(cmd: list[str], env: dict[str, str]) -> list[str]:
+    """
+    Allow runtime speed tuning without changing safe defaults.
+    """
+    mapping = (
+        ("STEPSTONE_DETAIL_CONCURRENCY", "CONCURRENT_REQUESTS"),
+        ("STEPSTONE_DETAIL_CONCURRENT_PER_DOMAIN", "CONCURRENT_REQUESTS_PER_DOMAIN"),
+        ("STEPSTONE_DETAIL_DOWNLOAD_DELAY_SECONDS", "DOWNLOAD_DELAY"),
+        ("STEPSTONE_DETAIL_DOWNLOAD_TIMEOUT_SECONDS", "DOWNLOAD_TIMEOUT"),
+        ("STEPSTONE_DETAIL_RANDOMIZE_DOWNLOAD_DELAY", "RANDOMIZE_DOWNLOAD_DELAY"),
+    )
+
+    applied: list[str] = []
+    for env_key, scrapy_key in mapping:
+        raw = (env.get(env_key) or "").strip()
+        if not raw:
+            continue
+        cmd.extend(["-s", f"{scrapy_key}={raw}"])
+        applied.append(f"{scrapy_key}={raw}")
+
+    if applied:
+        _log("applying speed overrides: " + ", ".join(applied))
+    return cmd
+
+
+def select_jobs_for_details(
+    *, limit: int, staleness_days: int, blocked_retry_hours: int, last_seen_window_days: int
+) -> list[dict]:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 select j.job_id, j.job_url
-                  from job_scrape.stepstone_jobs j
+                 from job_scrape.stepstone_jobs j
                   left join job_scrape.stepstone_job_details d
                     on d.job_id = j.job_id
-                 where (
+                 where j.last_seen_at > now() - (%s || ' days')::interval
+                   and (
                         d.job_id is null
                         or d.scraped_at < now() - (%s || ' days')::interval
                         or (
@@ -53,7 +81,7 @@ def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_ho
                  order by (d.job_id is null) desc, d.scraped_at asc nulls first, j.last_seen_at desc
                  limit %s
                 """,
-                (str(staleness_days), str(blocked_retry_hours), limit),
+                (str(last_seen_window_days), str(staleness_days), str(blocked_retry_hours), limit),
             )
             rows = cur.fetchall()
 
@@ -87,6 +115,7 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
         "-s",
         "LOG_LEVEL=INFO",
     ]
+    cmd = _apply_scrapy_speed_overrides(cmd, env)
     proc = subprocess.Popen(
         cmd,
         env=env,
@@ -151,9 +180,19 @@ def main() -> None:
     limit = int(os.getenv("MAX_JOB_DETAILS_PER_RUN", "200"))
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
-    _log(f"selecting jobs limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours}")
+    last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "60"))
+    _log(
+        "selecting jobs "
+        f"limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours} "
+        f"last_seen_window_days={last_seen_window_days}"
+    )
 
-    jobs = select_jobs_for_details(limit=limit, staleness_days=staleness_days, blocked_retry_hours=blocked_retry_hours)
+    jobs = select_jobs_for_details(
+        limit=limit,
+        staleness_days=staleness_days,
+        blocked_retry_hours=blocked_retry_hours,
+        last_seen_window_days=last_seen_window_days,
+    )
     if not jobs:
         _log("selected 0 jobs (nothing to do)")
         print(json.dumps({"status": "success", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}}))
