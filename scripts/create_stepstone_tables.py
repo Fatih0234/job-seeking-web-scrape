@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scripts.db import connect
+from scripts.ensure_lifecycle_schema import ensure_schema
 
 
 SQL = """
@@ -47,6 +48,10 @@ create table if not exists job_scrape.stepstone_jobs (
   job_url text not null,
   first_seen_at timestamptz not null,
   last_seen_at timestamptz not null,
+  is_active boolean not null default true,
+  stale_since_at timestamptz,
+  expired_at timestamptz,
+  expire_reason text,
   last_seen_search_run_id uuid references job_scrape.stepstone_search_runs(id)
 );
 
@@ -82,7 +87,17 @@ create table if not exists job_scrape.stepstone_job_details (
 create index if not exists idx_stepstone_search_definitions_enabled on job_scrape.stepstone_search_definitions(enabled);
 create index if not exists idx_stepstone_search_runs_crawl on job_scrape.stepstone_search_runs(crawl_run_id);
 create index if not exists idx_stepstone_jobs_last_seen on job_scrape.stepstone_jobs(last_seen_at desc);
+create index if not exists idx_stepstone_jobs_is_active_last_seen on job_scrape.stepstone_jobs(is_active, last_seen_at desc);
 create index if not exists idx_stepstone_job_details_scraped_at on job_scrape.stepstone_job_details(scraped_at desc);
+
+alter table if exists job_scrape.stepstone_jobs
+  add column if not exists is_active boolean not null default true;
+alter table if exists job_scrape.stepstone_jobs
+  add column if not exists stale_since_at timestamptz;
+alter table if exists job_scrape.stepstone_jobs
+  add column if not exists expired_at timestamptz;
+alter table if exists job_scrape.stepstone_jobs
+  add column if not exists expire_reason text;
 """
 
 
@@ -90,6 +105,7 @@ def main() -> None:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(SQL)
+        ensure_schema(conn)
         conn.commit()
     print("stepstone_tables_ready")
 
