@@ -14,8 +14,43 @@ def _log(msg: str) -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"[run_details {ts}] {msg}", file=sys.stderr)
 
+def _recent_blocked_details_run_within(*, cooldown_minutes: int) -> bool:
+    """
+    If we just got blocked, avoid immediately hammering LinkedIn again.
 
-def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_hours: int) -> list[dict]:
+    We key off crawl_runs where:
+    - trigger includes 'details' (e.g. github_schedule_details, github_manual_details)
+    - stats.details.status == 'blocked'
+    """
+    if cooldown_minutes <= 0:
+        return False
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select finished_at
+                  from job_scrape.crawl_runs
+                 where finished_at is not null
+                   and trigger like '%%details%%'
+                   and (stats->'details'->>'status') = 'blocked'
+                 order by finished_at desc
+                 limit 1
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            (finished_at,) = row
+            cur.execute(
+                "select (%s::timestamptz >= now() - (%s || ' minutes')::interval)",
+                (finished_at, str(cooldown_minutes)),
+            )
+            return bool(cur.fetchone()[0])
+
+
+def select_jobs_for_details(
+    *, limit: int, staleness_days: int, blocked_retry_hours: int, last_seen_window_days: int
+) -> list[dict]:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -25,6 +60,7 @@ def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_ho
                   left join job_scrape.job_details d
                     on d.source = j.source and d.job_id = j.job_id
                  where j.source = 'linkedin'
+                   and j.last_seen_at > now() - (%s || ' days')::interval
                    and (
                         d.job_id is null
                         or d.scraped_at < now() - (%s || ' days')::interval
@@ -36,7 +72,7 @@ def select_jobs_for_details(*, limit: int, staleness_days: int, blocked_retry_ho
                  order by (d.job_id is null) desc, d.scraped_at asc nulls first, j.last_seen_at desc
                  limit %s
                 """,
-                (str(staleness_days), str(blocked_retry_hours), limit),
+                (str(last_seen_window_days), str(staleness_days), str(blocked_retry_hours), limit),
             )
             rows = cur.fetchall()
 
@@ -95,9 +131,30 @@ def main() -> None:
     limit = int(os.getenv("MAX_JOB_DETAILS_PER_RUN", "200"))
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
-    _log(f"selecting jobs limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours}")
+    last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "60"))
+    cooldown_minutes = int(os.getenv("DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES", "0"))
+    _log(
+        "selecting jobs "
+        f"limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours} "
+        f"last_seen_window_days={last_seen_window_days}"
+    )
 
-    jobs = select_jobs_for_details(limit=limit, staleness_days=staleness_days, blocked_retry_hours=blocked_retry_hours)
+    if _recent_blocked_details_run_within(cooldown_minutes=cooldown_minutes):
+        _log(f"recent blocked run detected; skipping this details run (cooldown_minutes={cooldown_minutes})")
+        print(
+            json.dumps(
+                {"status": "skipped_backoff", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}},
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    jobs = select_jobs_for_details(
+        limit=limit,
+        staleness_days=staleness_days,
+        blocked_retry_hours=blocked_retry_hours,
+        last_seen_window_days=last_seen_window_days,
+    )
     if not jobs:
         _log("selected 0 jobs (nothing to do)")
         print(json.dumps({"status": "success", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}}))
