@@ -57,6 +57,8 @@ jobs:
         run: |
           python -m scripts.create_dashboard_view
           python -m scripts.ensure_geocode_schema
+          # Also ensures jobs_dashboard_location_candidates_v used by geocoding.
+          python -m scripts.create_dashboard_map_view
 
       - name: Preflight geocode work check
         id: preflight
@@ -73,23 +75,11 @@ jobs:
                 """
                 with src as (
                   select distinct
-                    lower(
-                      trim(
-                        regexp_replace(
-                          regexp_replace(trim(job_location), '\\s+', ' ', 'g'),
-                          '\\s*,\\s*',
-                          ', ',
-                          'g'
-                        )
-                      )
-                    ) as location_text_norm,
-                    case
-                      when platform in ('linkedin', 'stepstone') then 'de'
-                      when platform = 'xing' then 'de,at,ch'
-                      else 'de,at,ch'
-                    end as country_scope
-                  from job_scrape.jobs_dashboard_v
-                  where nullif(trim(job_location), '') is not null
+                    city_token_norm as location_text_norm,
+                    country_scope
+                  from job_scrape.jobs_dashboard_location_candidates_v
+                  where token_kind = 'city'
+                    and nullif(btrim(city_token_norm), '') is not null
                 ),
                 missing as (
                   select count(*)::bigint as n
@@ -165,24 +155,25 @@ jobs:
                 """
                 select
                   platform,
-                  count(*)::bigint as jobs_total,
-                  count(*) filter (where is_geocoded)::bigint as geocoded_jobs
-                from job_scrape.jobs_dashboard_map_v
+                  count(*)::bigint as city_points_total,
+                  count(*) filter (where is_geocoded)::bigint as city_points_geocoded
+                from job_scrape.jobs_dashboard_map_points_v
+                where token_kind = 'city'
                 group by platform
                 order by platform
                 """
               )
               coverage = []
-              for platform, jobs_total, geocoded_jobs in cur.fetchall():
-                jobs_total = int(jobs_total or 0)
-                geocoded_jobs = int(geocoded_jobs or 0)
-                pct = round((100.0 * geocoded_jobs / jobs_total), 2) if jobs_total else 0.0
+              for platform, total, geocoded in cur.fetchall():
+                total = int(total or 0)
+                geocoded = int(geocoded or 0)
+                pct = round((100.0 * geocoded / total), 2) if total else 0.0
                 coverage.append(
                   {
                     "platform": str(platform),
-                    "jobs_total": jobs_total,
-                    "geocoded_jobs": geocoded_jobs,
-                    "geocoded_pct": pct,
+                    "city_points_total": total,
+                    "city_points_geocoded": geocoded,
+                    "city_points_geocoded_pct": pct,
                   }
                 )
 
