@@ -67,11 +67,13 @@ jobs:
           RUN_DETAILS: "0"
           ENSURE_STEPSTONE_TABLES: "1"
           STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS: "1800"
-          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "21600"
+          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "7200"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
           # Keep discovery bounded in steady-state (24h window does not need deep pagination).
           MAX_PAGES_PER_SEARCH: ${{ github.event_name == 'schedule' && '10' || '50' }}
           MAX_JOBS_DISCOVERED_PER_SEARCH: ${{ github.event_name == 'schedule' && '500' || '2000' }}
+          DISCOVERY_SPIDER_TIMEOUT_SECONDS: ${{ github.event_name == 'schedule' && '1800' || '7200' }}
+          DISCOVERY_PROGRESS_TIMEOUT_SECONDS: "300"
         run: |
           set -euo pipefail
           python -m scripts.run_crawl_stepstone | tail -n 1 | tee stepstone_discovery_result.json

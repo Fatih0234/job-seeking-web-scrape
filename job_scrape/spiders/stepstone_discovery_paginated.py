@@ -32,6 +32,19 @@ def _looks_blocked(response: scrapy.http.Response) -> bool:
     )
 
 
+def _looks_transient_playwright_error(msg: str) -> bool:
+    # Playwright can fail with transient network/protocol errors on Stepstone/WAF edges.
+    m = (msg or "").lower()
+    return (
+        "err_http2_protocol_error" in m
+        or "net::err_http2_protocol_error" in m
+        or "net::err_connection_closed" in m
+        or "net::err_connection_reset" in m
+        or "net::err_connection_refused" in m
+        or "net::err_timed_out" in m
+    )
+
+
 class StepstoneDiscoveryPaginatedSpider(scrapy.Spider):
     """
     Paginate Stepstone result pages and discover only `main` jobs.
@@ -58,6 +71,8 @@ class StepstoneDiscoveryPaginatedSpider(scrapy.Spider):
         "CONCURRENT_REQUESTS": 1,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
         "DOWNLOAD_DELAY": 2.0,
+        # Prevent a single stuck request from hanging the whole run.
+        "DOWNLOAD_TIMEOUT": 60,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
     }
 
@@ -127,16 +142,72 @@ class StepstoneDiscoveryPaginatedSpider(scrapy.Spider):
         yield scrapy.Request(
             url,
             callback=self.parse_page,
+            errback=self.parse_error,
             cb_kwargs={"search": s, "page_num": page_num},
             dont_filter=True,
             meta={
+                "search_definition_id": sid,
+                "search_run_id": s.get("search_run_id"),
+                "search_name": s.get("name"),
+                "page_num": page_num,
                 "playwright": True,
+                # Avoid waiting for full "load" and set an explicit timeout.
+                "playwright_page_goto_kwargs": {"timeout": 60_000, "wait_until": "domcontentloaded"},
                 "playwright_include_page": True,
                 "playwright_page_methods": [
                     PageMethod("wait_for_timeout", 1000),
                 ],
             },
         )
+
+    async def parse_error(self, failure):
+        req = failure.request
+        sid = str(req.meta.get("search_definition_id") or "")
+        search_run_id = req.meta.get("search_run_id")
+        search_name = req.meta.get("search_name")
+        page_num = int(req.meta.get("page_num") or 0) or 1
+
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        page = req.meta.get("playwright_page")
+
+        response = getattr(getattr(failure, "value", None), "response", None)
+        status_code = getattr(response, "status", None)
+        msg = str(getattr(failure, "value", failure) or "request_failed")
+
+        blocked = False
+        if status_code in {403, 429, 503}:
+            blocked = True
+        if _looks_transient_playwright_error(msg):
+            # Treat as blocked-like for circuit breaker purposes: stop quickly and retry next run.
+            blocked = True
+
+        if sid:
+            if blocked:
+                self._block_streak[sid] = int(self._block_streak.get(sid, 0) or 0) + 1
+                if self._block_streak[sid] >= self._b["CIRCUIT_BREAKER_BLOCKS"]:
+                    self._blocked[sid] = True
+                    self.logger.error("Request failures for search %s; stopping (circuit breaker).", sid)
+            else:
+                self._block_streak[sid] = 0
+
+        try:
+            yield {
+                "record_type": "page_fetch",
+                "crawl_run_id": self.crawl_run_id,
+                "search_definition_id": sid or None,
+                "search_run_id": search_run_id,
+                "search_name": search_name,
+                "page_start": page_num,
+                "status_code": status_code,
+                "blocked": bool(blocked),
+                "item_count": 0,
+                "fetched_at": fetched_at,
+                "url": req.url,
+                "error": msg[:500],
+            }
+        finally:
+            if page:
+                await page.close()
 
     async def parse_page(self, response: scrapy.http.Response, *, search: dict[str, Any], page_num: int):
         sid = str(search["search_definition_id"])

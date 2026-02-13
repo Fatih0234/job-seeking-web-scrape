@@ -67,11 +67,13 @@ jobs:
           RUN_DETAILS: "0"
           ENSURE_STEPSTONE_TABLES: "1"
           STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS: "1800"
-          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "21600"
+          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "14400"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
           STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE: "7"
           MAX_PAGES_PER_SEARCH: "15"
           MAX_JOBS_DISCOVERED_PER_SEARCH: "800"
+          DISCOVERY_SPIDER_TIMEOUT_SECONDS: "7200"
+          DISCOVERY_PROGRESS_TIMEOUT_SECONDS: "300"
         run: |
           set -euo pipefail
           python -m scripts.run_crawl_stepstone | tail -n 1 | tee stepstone_discovery_result.json
