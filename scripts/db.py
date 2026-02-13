@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -8,6 +10,11 @@ from urllib.parse import quote_plus
 
 import psycopg
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+
+_CONNECT_RETRIES = 3
+_CONNECT_BACKOFF_SECS = (1.0, 2.0, 4.0)
 
 
 def _load_env() -> None:
@@ -48,7 +55,26 @@ def connect() -> Iterator[psycopg.Connection]:
     # PgBouncer transaction-pooling can reuse backend sessions across clients,
     # which breaks psycopg auto-prepared statement names. Disable prepares for
     # compatibility with pooled Supabase connections.
-    conn = psycopg.connect(db_url(), prepare_threshold=None)
+    #
+    # Retry with exponential backoff for transient connection failures.
+    last_err: Exception | None = None
+    for attempt in range(_CONNECT_RETRIES):
+        try:
+            conn = psycopg.connect(db_url(), prepare_threshold=None)
+            break
+        except psycopg.OperationalError as e:
+            last_err = e
+            if attempt < _CONNECT_RETRIES - 1:
+                delay = _CONNECT_BACKOFF_SECS[attempt]
+                logger.warning(
+                    "DB connect attempt %d failed (%s), retrying in %.1fs...",
+                    attempt + 1,
+                    e,
+                    delay,
+                )
+                time.sleep(delay)
+    else:
+        raise last_err  # type: ignore[misc]
     try:
         yield conn
     finally:
