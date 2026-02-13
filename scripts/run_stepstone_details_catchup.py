@@ -183,10 +183,12 @@ def main() -> None:
     no_progress_limit = int(os.getenv("STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT", "3"))
     stale_minutes = int(os.getenv("STEPSTONE_CATCHUP_STALE_MINUTES", "45"))
     batch_timeout_seconds = int(os.getenv("STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS", "10800"))
+    max_total_seconds = int(os.getenv("STEPSTONE_CATCHUP_MAX_TOTAL_SECONDS", "0"))
     sleep_seconds = int(os.getenv("STEPSTONE_CATCHUP_SLEEP_SECONDS", "5"))
     trigger = os.getenv("STEPSTONE_CATCHUP_TRIGGER", "manual_full_details_batch")
     strict = (os.getenv("STEPSTONE_CATCHUP_STRICT", "0") or "0").strip().lower() in {"1", "true", "yes"}
 
+    started = time.monotonic()
     missing_initial = _missing_details_count()
     _log(
         "selection constraints "
@@ -198,6 +200,8 @@ def main() -> None:
         f"start missing={missing_initial} batch_size={batch_size} max_batches={max_batches} "
         f"no_progress_limit={no_progress_limit}"
     )
+    if max_total_seconds > 0:
+        _log(f"max_total_seconds={max_total_seconds}")
 
     no_progress_streak = 0
     batches_run = 0
@@ -205,6 +209,10 @@ def main() -> None:
     blocked_encountered = False
 
     while batches_run < max_batches:
+        if max_total_seconds > 0 and (time.monotonic() - started) > max_total_seconds:
+            _log("max_total_seconds reached; stopping catch-up early to keep cron bounded")
+            break
+
         stale_ids = _cleanup_stale_running_runs(stale_minutes=stale_minutes)
         if stale_ids:
             _log(f"watchdog cleaned stale running crawl_runs={stale_ids}")

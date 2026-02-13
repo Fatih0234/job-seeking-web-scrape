@@ -69,6 +69,9 @@ jobs:
           STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS: "1800"
           STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "21600"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
+          # Keep discovery bounded in steady-state (24h window does not need deep pagination).
+          MAX_PAGES_PER_SEARCH: ${{ github.event_name == 'schedule' && '10' || '50' }}
+          MAX_JOBS_DISCOVERED_PER_SEARCH: ${{ github.event_name == 'schedule' && '500' || '2000' }}
         run: |
           set -euo pipefail
           python -m scripts.run_crawl_stepstone | tail -n 1 | tee stepstone_discovery_result.json
@@ -90,13 +93,15 @@ jobs:
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
           STEPSTONE_CATCHUP_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_details_catchup' || 'github_manual_details_catchup' }}
-          STEPSTONE_CATCHUP_BATCH_SIZE: ${{ github.event_name == 'schedule' && '300' || '500' }}
-          STEPSTONE_CATCHUP_MAX_BATCHES: ${{ github.event_name == 'schedule' && '3' || '12' }}
-          STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_CATCHUP_BATCH_SIZE: ${{ github.event_name == 'schedule' && '200' || '500' }}
+          STEPSTONE_CATCHUP_MAX_BATCHES: ${{ github.event_name == 'schedule' && '2' || '12' }}
+          STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: ${{ github.event_name == 'schedule' && '3600' || '5400' }}
+          STEPSTONE_CATCHUP_MAX_TOTAL_SECONDS: ${{ github.event_name == 'schedule' && '5400' || '0' }}
           STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT: ${{ github.event_name == 'schedule' && '5' || '10' }}
           STEPSTONE_CATCHUP_STALE_MINUTES: "60"
           STEPSTONE_CATCHUP_SLEEP_SECONDS: "5"
-          STEPSTONE_CATCHUP_STRICT: ${{ github.event_name == 'schedule' && '0' || '1' }}
+          # Keep workflows green on WAF blocks; DB run status will still show 'blocked'.
+          STEPSTONE_CATCHUP_STRICT: "0"
           STEPSTONE_DETAIL_CONCURRENCY: "2"
           STEPSTONE_DETAIL_CONCURRENT_PER_DOMAIN: "2"
           STEPSTONE_DETAIL_DOWNLOAD_DELAY_SECONDS: "1.5"

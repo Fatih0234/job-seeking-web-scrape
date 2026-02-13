@@ -70,6 +70,8 @@ jobs:
           STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "21600"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
           STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE: "7"
+          MAX_PAGES_PER_SEARCH: "15"
+          MAX_JOBS_DISCOVERED_PER_SEARCH: "800"
         run: |
           set -euo pipefail
           python -m scripts.run_crawl_stepstone | tail -n 1 | tee stepstone_discovery_result.json
@@ -94,6 +96,7 @@ jobs:
           STEPSTONE_CATCHUP_BATCH_SIZE: "300"
           STEPSTONE_CATCHUP_MAX_BATCHES: "6"
           STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_CATCHUP_MAX_TOTAL_SECONDS: "10800"
           STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT: "5"
           STEPSTONE_CATCHUP_STALE_MINUTES: "60"
           STEPSTONE_CATCHUP_SLEEP_SECONDS: "5"
@@ -129,4 +132,3 @@ jobs:
           name: output-stepstone-weekly
           path: output/**
           if-no-files-found: warn
-
