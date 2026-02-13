@@ -1,19 +1,31 @@
-name: LinkedIn Details
+name: XING Details Catch-up
 
 concurrency:
-  group: linkedin-details-${{ github.ref_name }}
-  cancel-in-progress: false
+  group: xing-details-catchup-${{ github.ref_name }}
+  # Details runs can take long; cancel older in-progress runs to avoid pileups.
+  cancel-in-progress: true
 
 on:
   schedule:
-    # Every hour (UTC)
-    - cron: "15 * * * *"
-  workflow_dispatch: {}
+    # Every 3 hours (UTC)
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      max_job_details_per_run:
+        description: "Max XING job details to scrape this run"
+        required: false
+        default: "100"
+        type: string
+      last_seen_window_days:
+        description: "Only scrape details for jobs seen within N days"
+        required: false
+        default: "2"
+        type: string
 
 jobs:
   details:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -23,13 +35,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Random start jitter
-        # Reduce "cron fingerprinting" by not always hitting LinkedIn at the same minute.
-        run: |
-          s=$((RANDOM % 900))
-          echo "Sleeping ${s}s before starting details crawl..."
-          sleep "$s"
 
       - name: Install dependencies
         run: |
@@ -44,7 +49,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_*.py"
 
-      - name: Run details-only crawl
+      - name: Run XING details catch-up (no discovery)
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
           SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -52,21 +57,24 @@ jobs:
           SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
-          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_details' || 'github_manual_details' }}
+
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_xing_details' || 'github_manual_xing_details' }}
+          ENSURE_XING_TABLES: "1"
           RUN_DISCOVERY: "0"
           RUN_DETAILS: "1"
-          SYNC_SEARCH_DEFINITIONS: "0"
 
-          # Keep details conservative to reduce blocks.
-          MAX_JOB_DETAILS_PER_RUN: "200"
-          DETAIL_BLOCKED_RETRY_HOURS: "24"
-          # If a run gets blocked, wait at least one schedule interval before trying again.
-          DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES: "180"
+          MAX_JOB_DETAILS_PER_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.max_job_details_per_run || '100' }}
+          DETAIL_LAST_SEEN_WINDOW_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.last_seen_window_days || '2' }}
+          DETAIL_STALENESS_DAYS: "14"
 
+          # Keep the crawl safe/steady.
+          CIRCUIT_BREAKER_BLOCKS: "3"
+          DETAIL_DEBUG_FAILURE_LIMIT: "5"
         run: |
-          python -m scripts.run_crawl
+          python -m scripts.run_crawl_xing
 
-      - name: Report latest run
+      - name: Report latest run (XING)
+        if: always()
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
           SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -74,6 +82,7 @@ jobs:
           SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
+          REPORT_SOURCE: xing
         run: |
           python -m scripts.report_latest_run
 
@@ -81,6 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: output
+          name: output-xing-details
           path: output/**
           if-no-files-found: warn
+

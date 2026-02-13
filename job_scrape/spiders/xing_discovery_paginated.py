@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -93,10 +94,13 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
 
         facets = s.get("facets") or {}
         city_id = facets.get("city_id")
+        # Allow incremental runs (GitHub Actions) without modifying DB definitions.
+        since_period = (os.getenv("XING_SINCE_PERIOD") or "").strip() or facets.get("since_period")
         url = build_search_url(
             keywords=s.get("keywords", ""),
             location_text=s.get("location_text"),
             city_id=city_id,
+            since_period=since_period,
         )
 
         yield scrapy.Request(
@@ -222,6 +226,8 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
                         "page_start": page_batch,
                         "scraped_at": fetched_at,
                         "search_url": current_url,
+                        "is_external": bool(it.get("is_external")),
+                        "list_preview": it.get("list_preview") or {},
                     }
 
                 if page_new == 0:
@@ -254,4 +260,3 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
 
     def closed(self, reason: str):
         return
-

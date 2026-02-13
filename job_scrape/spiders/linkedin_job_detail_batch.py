@@ -44,6 +44,8 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
         "DOWNLOAD_DELAY": 4.0,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
+        # No need for session cookies on the guest endpoint; disabling reduces tracking surface.
+        "COOKIES_ENABLED": False,
     }
 
     def __init__(self, inputs: str, crawl_run_id: str = "", **kwargs: Any) -> None:
@@ -76,6 +78,24 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
     def _guest_posting_url(job_id: str) -> str:
         return f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
 
+    def _guest_headers(self) -> dict[str, str]:
+        # Keep stable-ish headers to look like a normal browser, without doing anything stateful.
+        ua = (os.getenv("LINKEDIN_GUEST_USER_AGENT") or "").strip()
+        if not ua:
+            ua = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            )
+        accept_lang = (os.getenv("LINKEDIN_ACCEPT_LANGUAGE") or "").strip() or "en-US,en;q=0.9,de;q=0.8"
+        return {
+            "User-Agent": ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": accept_lang,
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        }
+
     async def start(self):
         data = json.loads(Path(self.inputs_path).read_text(encoding="utf-8"))
         jobs = data.get("jobs") or []
@@ -90,6 +110,7 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
             url = self._guest_posting_url(job_id)
             yield scrapy.Request(
                 url,
+                headers=self._guest_headers(),
                 callback=self.parse_detail,
                 cb_kwargs={"job": j, "used_playwright": False},
                 dont_filter=True,

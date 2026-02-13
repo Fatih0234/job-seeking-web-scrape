@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from scripts.db import connect
@@ -15,7 +15,7 @@ def parse_ts(s: str) -> datetime:
 
 def main() -> None:
     if len(sys.argv) != 2:
-        raise SystemExit("usage: python scripts/import_discovery.py <jsonl_path>")
+        raise SystemExit("usage: python scripts/import_discovery_xing.py <jsonl_path>")
 
     path = Path(sys.argv[1])
     pages_by_search_run: dict[str, set[int]] = defaultdict(set)
@@ -44,7 +44,6 @@ def main() -> None:
                 if rtype != "job_discovered":
                     continue
 
-                source = rec["source"]
                 job_id = rec["job_id"]
                 job_url = rec["job_url"]
                 srid = rec.get("search_run_id")
@@ -53,17 +52,25 @@ def main() -> None:
                     pages_by_search_run[srid].add(int(rec.get("page_start", 0)))
 
                 scraped_at = parse_ts(rec["scraped_at"])
+                is_external = bool(rec.get("is_external"))
+                list_preview = rec.get("list_preview") or {}
 
-                # Upsert jobs
                 cur.execute(
                     """
-                    insert into job_scrape.jobs (
-                      source, job_id, job_url, first_seen_at, last_seen_at, last_seen_search_run_id,
-                      is_active, stale_since_at, expired_at, expire_reason
-                    )
-                    values (%s, %s, %s, %s, %s, %s, true, null, null, null)
-                    on conflict (source, job_id) do update set
+                    insert into job_scrape.xing_jobs
+                      (
+                        job_id, job_url, is_external, list_preview, first_seen_at, last_seen_at, last_seen_search_run_id,
+                        is_active, stale_since_at, expired_at, expire_reason
+                      )
+                    values (%s, %s, %s, %s::jsonb, %s, %s, %s, true, null, null, null)
+                    on conflict (job_id) do update set
                       job_url = excluded.job_url,
+                      is_external = excluded.is_external,
+                      list_preview = case
+                        when coalesce(job_scrape.xing_jobs.list_preview, '{}'::jsonb) = '{}'::jsonb
+                          then excluded.list_preview
+                        else job_scrape.xing_jobs.list_preview || excluded.list_preview
+                      end,
                       last_seen_at = excluded.last_seen_at,
                       last_seen_search_run_id = excluded.last_seen_search_run_id,
                       is_active = true,
@@ -71,25 +78,23 @@ def main() -> None:
                       expired_at = null,
                       expire_reason = null
                     """,
-                    (source, job_id, job_url, scraped_at, scraped_at, srid),
+                    (job_id, job_url, is_external, json.dumps(list_preview), scraped_at, scraped_at, srid),
                 )
 
-                # Insert hit
                 if srid:
                     cur.execute(
                         """
-                        insert into job_scrape.job_search_hits (search_run_id, source, job_id, rank, page_start, scraped_at)
-                        values (%s, %s, %s, %s, %s, %s)
+                        insert into job_scrape.xing_job_search_hits (search_run_id, job_id, rank, page_start, scraped_at)
+                        values (%s, %s, %s, %s, %s)
                         on conflict do nothing
                         """,
-                        (srid, source, job_id, int(rec.get("rank", 0)), int(rec.get("page_start", 0)), scraped_at),
+                        (srid, job_id, int(rec.get("rank", 0)), int(rec.get("page_start", 0)), scraped_at),
                     )
 
-            # Update search_runs
             for srid, pages in pages_by_search_run.items():
                 cur.execute(
                     """
-                    update job_scrape.search_runs
+                    update job_scrape.xing_search_runs
                        set finished_at = now(),
                            status = %s,
                            pages_fetched = %s,

@@ -55,12 +55,19 @@ def main() -> None:
 
                 cur.execute(
                     """
-                    insert into job_scrape.stepstone_jobs (job_id, job_url, first_seen_at, last_seen_at, last_seen_search_run_id)
-                    values (%s, %s, %s, %s, %s)
+                    insert into job_scrape.stepstone_jobs (
+                      job_id, job_url, first_seen_at, last_seen_at, last_seen_search_run_id,
+                      is_active, stale_since_at, expired_at, expire_reason
+                    )
+                    values (%s, %s, %s, %s, %s, true, null, null, null)
                     on conflict (job_id) do update set
                       job_url = excluded.job_url,
                       last_seen_at = excluded.last_seen_at,
-                      last_seen_search_run_id = excluded.last_seen_search_run_id
+                      last_seen_search_run_id = excluded.last_seen_search_run_id,
+                      is_active = true,
+                      stale_since_at = null,
+                      expired_at = null,
+                      expire_reason = null
                     """,
                     (job_id, job_url, scraped_at, scraped_at, srid),
                 )

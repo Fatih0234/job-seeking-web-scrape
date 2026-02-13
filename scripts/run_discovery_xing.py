@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scripts.crawl_common import (
+from scripts.xing_crawl_common import (
     create_crawl_run,
     create_search_runs,
     finish_crawl_run,
@@ -61,21 +61,21 @@ def run_spider(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> P
 
 
 def import_results(jsonl_path: Path) -> dict:
-    cmd = [sys.executable, "-m", "scripts.import_discovery", str(jsonl_path)]
+    cmd = [sys.executable, "-m", "scripts.import_discovery_xing", str(jsonl_path)]
     try:
         out = subprocess.check_output(cmd, text=True)
         return json.loads(out.strip())
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"import_discovery failed (exit={e.returncode}).") from e
+        raise RuntimeError(f"import_discovery_xing failed (exit={e.returncode}).") from e
     except json.JSONDecodeError as e:
-        raise RuntimeError("import_discovery did not return valid JSON") from e
+        raise RuntimeError("import_discovery_xing did not return valid JSON") from e
 
 
 def main() -> None:
     existing_run_id = os.getenv("CRAWL_RUN_ID")
     if existing_run_id:
         crawl_run_id = existing_run_id
-        searches = load_enabled_searches(source="xing")
+        searches = load_enabled_searches()
         if not searches:
             raise SystemExit("No enabled xing search_definitions found; run scripts/sync_search_definitions_xing.py first")
 
@@ -91,7 +91,7 @@ def main() -> None:
     trigger = os.getenv("CRAWL_TRIGGER", "manual")
     crawl_run_id = create_crawl_run(trigger)
     try:
-        searches = load_enabled_searches(source="xing")
+        searches = load_enabled_searches()
         if not searches:
             finish_crawl_run(crawl_run_id, status="failed", stats={}, error="No enabled xing search_definitions found")
             raise SystemExit("No enabled xing search_definitions found; run scripts/sync_search_definitions_xing.py first")
@@ -111,4 +111,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
