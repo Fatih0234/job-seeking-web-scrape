@@ -16,7 +16,11 @@ def _log(msg: str) -> None:
 
 
 def select_jobs_for_details(
-    *, limit: int, staleness_days: int, blocked_retry_hours: int, last_seen_window_days: int
+    *,
+    limit: int,
+    staleness_days: int,
+    blocked_retry_hours: int,
+    last_seen_window_days: int,
 ) -> list[dict]:
     with connect() as conn:
         with conn.cursor() as cur:
@@ -39,7 +43,12 @@ def select_jobs_for_details(
                  order by (d.job_id is null) desc, d.scraped_at asc nulls first, j.last_seen_at desc
                  limit %s
                 """,
-                (str(last_seen_window_days), str(staleness_days), str(blocked_retry_hours), limit),
+                (
+                    str(last_seen_window_days),
+                    str(staleness_days),
+                    str(blocked_retry_hours),
+                    limit,
+                ),
             )
             rows = cur.fetchall()
 
@@ -59,7 +68,9 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     inputs = {"crawl_run_id": crawl_run_id, "generated_at": now_utc_iso(), "jobs": jobs}
     inputs_path = out_jsonl.with_suffix(".inputs.json")
-    inputs_path.write_text(json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8")
+    inputs_path.write_text(
+        json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     env = os.environ.copy()
     env.setdefault("DETAIL_DEBUG_FAILURE_LIMIT", "5")
@@ -83,7 +94,9 @@ def run_spider(*, crawl_run_id: str, jobs: list[dict], out_jsonl: Path) -> Path:
     try:
         subprocess.check_call(cmd, env=env, stdout=sys.stderr, stderr=sys.stderr)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"XING detail spider failed (exit={e.returncode}). See Scrapy logs above.") from e
+        raise RuntimeError(
+            f"XING detail spider failed (exit={e.returncode}). See Scrapy logs above."
+        ) from e
 
     return inputs_path
 
@@ -175,12 +188,14 @@ def import_results(jsonl_path: Path) -> dict:
 def main() -> None:
     crawl_run_id = os.getenv("CRAWL_RUN_ID")
     if not crawl_run_id:
-        raise SystemExit("CRAWL_RUN_ID env var is required (use scripts/run_crawl_xing.py to orchestrate)")
+        raise SystemExit(
+            "CRAWL_RUN_ID env var is required (use scripts/run_crawl_xing.py to orchestrate)"
+        )
 
     limit = int(os.getenv("MAX_JOB_DETAILS_PER_RUN", "200"))
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
-    last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "60"))
+    last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "7"))
     _log(
         "selecting jobs "
         f"limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours} "
@@ -195,25 +210,40 @@ def main() -> None:
     )
     if not jobs:
         _log("selected 0 jobs (nothing to do)")
-        print(json.dumps({"status": "success", "crawl_run_id": crawl_run_id, "counts": {"detail_jobs_selected": 0}}))
+        print(
+            json.dumps(
+                {
+                    "status": "success",
+                    "crawl_run_id": crawl_run_id,
+                    "counts": {"detail_jobs_selected": 0},
+                }
+            )
+        )
         return
 
     internal_jobs = [j for j in jobs if not j.get("is_external")]
     external_jobs = [j for j in jobs if j.get("is_external")]
 
-    _log(f"selected total={len(jobs)} internal={len(internal_jobs)} external={len(external_jobs)}")
+    _log(
+        f"selected total={len(jobs)} internal={len(internal_jobs)} external={len(external_jobs)}"
+    )
 
     out_jsonl = Path("output") / f"xing_details_{crawl_run_id}.jsonl"
     part_files: list[Path] = []
 
     if external_jobs:
         ext_jsonl = out_jsonl.with_suffix(".external.jsonl")
-        _write_jsonl(ext_jsonl, _external_list_only_records(crawl_run_id=crawl_run_id, jobs=external_jobs))
+        _write_jsonl(
+            ext_jsonl,
+            _external_list_only_records(crawl_run_id=crawl_run_id, jobs=external_jobs),
+        )
         part_files.append(ext_jsonl)
 
     if internal_jobs:
         internal_jsonl = out_jsonl.with_suffix(".internal.jsonl")
-        run_spider(crawl_run_id=crawl_run_id, jobs=internal_jobs, out_jsonl=internal_jsonl)
+        run_spider(
+            crawl_run_id=crawl_run_id, jobs=internal_jobs, out_jsonl=internal_jsonl
+        )
         part_files.append(internal_jsonl)
 
     _merge_jsonl(out_jsonl, part_files)
