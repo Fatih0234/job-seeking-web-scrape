@@ -1,13 +1,13 @@
-name: Stepstone Crawl
+name: Stepstone Weekly Backfill
 
 concurrency:
-  group: stepstone-crawl-${{ github.ref_name }}
+  group: stepstone-backfill-${{ github.ref_name }}
   cancel-in-progress: false
 
 on:
   schedule:
-    # Every 12 hours (UTC)
-    - cron: "0 */12 * * *"
+    # Weekly safety-net (UTC)
+    - cron: "10 1 * * 0"
   workflow_dispatch:
     inputs:
       sync_search_definitions_stepstone:
@@ -19,7 +19,7 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 420
+    timeout-minutes: 240
 
     steps:
       - name: Checkout
@@ -53,7 +53,7 @@ jobs:
             echo "SYNC_SEARCH_DEFINITIONS_STEPSTONE=1" >> "$GITHUB_ENV"
           fi
 
-      - name: Run stepstone discovery
+      - name: Run stepstone discovery (7-day window)
         id: discovery
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -62,17 +62,17 @@ jobs:
           SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
-          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule' || 'github_manual' }}
+          CRAWL_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_weekly_backfill' || 'github_manual_weekly_backfill' }}
           RUN_DISCOVERY: "1"
           RUN_DETAILS: "0"
           ENSURE_STEPSTONE_TABLES: "1"
           STEPSTONE_BOOTSTRAP_TIMEOUT_SECONDS: "1800"
-          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "7200"
+          STEPSTONE_DISCOVERY_TIMEOUT_SECONDS: "14400"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
-          # Keep discovery bounded in steady-state (24h window does not need deep pagination).
-          MAX_PAGES_PER_SEARCH: ${{ github.event_name == 'schedule' && '10' || '50' }}
-          MAX_JOBS_DISCOVERED_PER_SEARCH: ${{ github.event_name == 'schedule' && '500' || '2000' }}
-          DISCOVERY_SPIDER_TIMEOUT_SECONDS: ${{ github.event_name == 'schedule' && '1800' || '7200' }}
+          STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE: "7"
+          MAX_PAGES_PER_SEARCH: "15"
+          MAX_JOBS_DISCOVERED_PER_SEARCH: "800"
+          DISCOVERY_SPIDER_TIMEOUT_SECONDS: "7200"
           DISCOVERY_PROGRESS_TIMEOUT_SECONDS: "300"
         run: |
           set -euo pipefail
@@ -85,7 +85,7 @@ jobs:
           print(f"status={data.get('status') or 'unknown'}")
           PY
 
-      - name: Run stepstone details catch-up
+      - name: Run stepstone details catch-up (bounded)
         if: steps.discovery.outputs.status == 'success'
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -94,15 +94,14 @@ jobs:
           SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SUPABASE_SSLMODE: ${{ secrets.SUPABASE_SSLMODE }}
-          STEPSTONE_CATCHUP_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_details_catchup' || 'github_manual_details_catchup' }}
-          STEPSTONE_CATCHUP_BATCH_SIZE: ${{ github.event_name == 'schedule' && '200' || '500' }}
-          STEPSTONE_CATCHUP_MAX_BATCHES: ${{ github.event_name == 'schedule' && '2' || '12' }}
-          STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: ${{ github.event_name == 'schedule' && '3600' || '5400' }}
-          STEPSTONE_CATCHUP_MAX_TOTAL_SECONDS: ${{ github.event_name == 'schedule' && '5400' || '0' }}
-          STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT: ${{ github.event_name == 'schedule' && '5' || '10' }}
+          STEPSTONE_CATCHUP_TRIGGER: ${{ github.event_name == 'schedule' && 'github_schedule_weekly_details_catchup' || 'github_manual_weekly_details_catchup' }}
+          STEPSTONE_CATCHUP_BATCH_SIZE: "300"
+          STEPSTONE_CATCHUP_MAX_BATCHES: "6"
+          STEPSTONE_CATCHUP_BATCH_TIMEOUT_SECONDS: "5400"
+          STEPSTONE_CATCHUP_MAX_TOTAL_SECONDS: "10800"
+          STEPSTONE_CATCHUP_NO_PROGRESS_LIMIT: "5"
           STEPSTONE_CATCHUP_STALE_MINUTES: "60"
           STEPSTONE_CATCHUP_SLEEP_SECONDS: "5"
-          # Keep workflows green on WAF blocks; DB run status will still show 'blocked'.
           STEPSTONE_CATCHUP_STRICT: "0"
           STEPSTONE_DETAIL_CONCURRENCY: "2"
           STEPSTONE_DETAIL_CONCURRENT_PER_DOMAIN: "2"
@@ -111,7 +110,6 @@ jobs:
           DETAIL_SPIDER_TIMEOUT_SECONDS: "5400"
           STEPSTONE_DETAILS_TIMEOUT_SECONDS: "5400"
           STEPSTONE_STALE_RUNNING_MINUTES: "180"
-          # For steady-state, avoid refreshing old details constantly; focus on missing + blocked retry.
           DETAIL_STALENESS_DAYS: "365"
         run: |
           python -m scripts.run_stepstone_details_catchup
@@ -133,6 +131,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: output-stepstone
+          name: output-stepstone-weekly
           path: output/**
           if-no-files-found: warn

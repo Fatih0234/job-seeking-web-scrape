@@ -8,12 +8,9 @@ Stepstone implementation details and operator runbook:
 ## Prerequisites
 
 - Add the database GitHub Actions secrets used by workflows:
-  - `SUPABASE_HOST`
-  - `SUPABASE_PORT`
-  - `SUPABASE_DATABASE`
-  - `SUPABASE_USER`
-  - `SUPABASE_PASSWORD`
-  - `SUPABASE_SSLMODE`
+  - `SUPABASE_DB_URL` (single connection string), or
+  - `SUPABASE_HOST`, `SUPABASE_PORT`, `SUPABASE_DATABASE`, `SUPABASE_USER`, `SUPABASE_PASSWORD` (recommended; assembled in code)
+  - Optional: `SUPABASE_SSLMODE` (defaults to `require`)
 - For map geocoding workflow, also add:
   - `GEOAPIFY_API_KEY`
 - Format examples are in `/Volumes/T7/job-seeking-web-scrape/.env.example`.
@@ -35,6 +32,10 @@ Stepstone has a dedicated workflow:
     - `true`: runs `scripts/sync_search_definitions_stepstone.py` first
     - `false`: skips sync and uses existing `job_scrape.stepstone_search_definitions` rows
 
+Stepstone also has a weekly safety-net backfill workflow:
+- Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/stepstone-backfill.yml`
+- Schedule: weekly (UTC)
+- Uses `STEPSTONE_DISCOVERY_AGE_DAYS_OVERRIDE=7` to widen discovery without re-syncing definitions.
 XING has a dedicated workflow (incremental, last 24 hours):
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/xing-crawl-last24h.yml`
 - Schedule: every 12 hours (UTC)
