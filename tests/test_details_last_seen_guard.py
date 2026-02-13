@@ -66,10 +66,21 @@ class TestDetailsLastSeenGuard(unittest.TestCase):
     def test_xing_uses_last_seen_guard(self):
         self._assert_guard(run_details_xing)
 
-    def test_default_window_is_60_days_in_all_mains(self):
-        self.assertIn('DETAIL_LAST_SEEN_WINDOW_DAYS", "60"', inspect.getsource(run_details.main))
-        self.assertIn('DETAIL_LAST_SEEN_WINDOW_DAYS", "60"', inspect.getsource(run_details_stepstone.main))
-        self.assertIn('DETAIL_LAST_SEEN_WINDOW_DAYS", "60"', inspect.getsource(run_details_xing.main))
+    def test_default_window_is_60_days_in_linkedin_and_stepstone(self):
+        self.assertIn(
+            'DETAIL_LAST_SEEN_WINDOW_DAYS", "60"', inspect.getsource(run_details.main)
+        )
+        self.assertIn(
+            'DETAIL_LAST_SEEN_WINDOW_DAYS", "60"',
+            inspect.getsource(run_details_stepstone.main),
+        )
+
+    def test_default_window_is_7_days_in_xing(self):
+        """XING uses a tighter default because its catch-up runs every 3 hours."""
+        self.assertIn(
+            'DETAIL_LAST_SEEN_WINDOW_DAYS", "7"',
+            inspect.getsource(run_details_xing.main),
+        )
 
 
 if __name__ == "__main__":
