@@ -5,21 +5,13 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  workflow_run:
-    workflows:
-      - LinkedIn Crawl
-      - LinkedIn Details
-      - Stepstone Crawl
-    types:
-      - completed
   schedule:
-    # Daily safety net at 03:50 UTC
-    - cron: "50 3 * * *"
+    # Daily at 12:50 UTC
+    - cron: "50 12 * * *"
   workflow_dispatch: {}
 
 jobs:
   geocode:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

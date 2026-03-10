@@ -6,8 +6,8 @@ concurrency:
 
 on:
   schedule:
-    # Every hour (UTC)
-    - cron: "15 * * * *"
+    # Twice daily at 11:15 UTC and 23:15 UTC
+    - cron: "15 11,23 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
           # Keep details conservative to reduce blocks.
           MAX_JOB_DETAILS_PER_RUN: "200"
           DETAIL_BLOCKED_RETRY_HOURS: "24"
-          # If a run gets blocked, wait at least one schedule interval before trying again.
+          # Cool down after a blocked run before attempting another details pass.
           DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES: "180"
 
         run: |
