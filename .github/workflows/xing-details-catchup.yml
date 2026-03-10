@@ -7,8 +7,8 @@ concurrency:
 
 on:
   schedule:
-    # Every 3 hours (UTC)
-    - cron: "0 */3 * * *"
+    # Daily at 08:30 UTC
+    - cron: "30 8 * * *"
   workflow_dispatch:
     inputs:
       max_job_details_per_run:

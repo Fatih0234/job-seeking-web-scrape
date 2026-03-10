@@ -256,13 +256,9 @@ source .venv/bin/activate
 python -m scripts.create_dashboard_map_view
 ```
 
-### Map: event-driven geocode orchestration (GitHub Actions)
+### Map: scheduled geocode orchestration (GitHub Actions)
 - Workflow: `.github/workflows/geocode-enrichment.yml`
-- Triggered after successful:
-  - `LinkedIn Crawl`
-  - `LinkedIn Details`
-  - `Stepstone Crawl`
-- Also runs as daily safety net at `03:50 UTC` and via manual `workflow_dispatch`.
+- Runs daily at `12:50 UTC` and via manual `workflow_dispatch`.
 - Requires `GEOAPIFY_API_KEY` as a GitHub Actions secret.
 
 ### Map: manual reset for failed-permanent geocodes

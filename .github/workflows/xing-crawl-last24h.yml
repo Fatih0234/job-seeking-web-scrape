@@ -6,8 +6,8 @@ concurrency:
 
 on:
   schedule:
-    # Every 12 hours (UTC)
-    - cron: "0 */12 * * *"
+    # Daily at 05:45 UTC
+    - cron: "45 5 * * *"
   workflow_dispatch:
     inputs:
       sync_search_definitions_xing:
