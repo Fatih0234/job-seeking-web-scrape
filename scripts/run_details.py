@@ -132,7 +132,7 @@ def main() -> None:
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
     last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "60"))
-    cooldown_minutes = int(os.getenv("DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES", "0"))
+    cooldown_minutes = int(os.getenv("DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES", "180"))
     _log(
         "selecting jobs "
         f"limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours} "
@@ -162,11 +162,25 @@ def main() -> None:
 
     _log(f"selected {len(jobs)} jobs for details")
     out_jsonl = Path("output") / f"details_{crawl_run_id}.jsonl"
-    run_spider(crawl_run_id=crawl_run_id, jobs=jobs, out_jsonl=out_jsonl)
 
-    stats = import_results(out_jsonl)
+    spider_error: RuntimeError | None = None
+    try:
+        run_spider(crawl_run_id=crawl_run_id, jobs=jobs, out_jsonl=out_jsonl)
+    except RuntimeError as e:
+        spider_error = e
+        _log(f"spider failed ({e}); will attempt to salvage partial results")
+
+    if out_jsonl.exists() and out_jsonl.stat().st_size > 0:
+        stats = import_results(out_jsonl)
+    elif spider_error is not None:
+        raise spider_error
+    else:
+        stats = {"status": "success", "counts": {}}
+
     stats.setdefault("counts", {})
     stats["counts"]["detail_jobs_selected"] = len(jobs)
+    if spider_error is not None:
+        stats.setdefault("spider_error", str(spider_error))
     _log(
         "imported details "
         f"parse_ok={int(stats.get('counts', {}).get('detail_parse_ok', 0) or 0)} "

@@ -42,7 +42,7 @@ def main() -> None:
                 and "extracted_skills_extracted_at" in cols
             )
 
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in open(path, encoding="utf-8"):
                 if not line.strip():
                     continue
                 rec: dict[str, Any] = json.loads(line)
@@ -162,7 +162,9 @@ def main() -> None:
         conn.commit()
 
     status = "success"
-    if counts.get("detail_blocked", 0) > 0:
+    detail_blocked = counts.get("detail_blocked", 0)
+    detail_total = max(counts.get("detail_rows_upserted", 1), 1)
+    if detail_blocked > 0 and (detail_blocked / detail_total) > 0.10:
         status = "blocked"
 
     out = {

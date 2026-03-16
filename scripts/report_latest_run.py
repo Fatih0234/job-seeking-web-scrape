@@ -251,39 +251,66 @@ def _report_xing(cur, run_id: str) -> dict:
 
 def main() -> None:
     report_source = (os.getenv("REPORT_SOURCE", "linkedin") or "linkedin").strip().lower()
+    report_run_id = (os.getenv("REPORT_RUN_ID") or "").strip()
+    report_scope = "latest_fallback"
+
+    if report_source == "stepstone":
+        table = "job_scrape.stepstone_crawl_runs"
+    elif report_source == "xing":
+        table = "job_scrape.xing_crawl_runs"
+    else:
+        table = "job_scrape.crawl_runs"
+
     with connect() as conn:
         with conn.cursor() as cur:
-            if report_source == "stepstone":
+            if report_run_id:
+                report_scope = "explicit_run_id"
                 cur.execute(
                     """
                     select id, trigger, status, started_at, finished_at, error, stats
-                      from job_scrape.stepstone_crawl_runs
-                     order by started_at desc nulls last
+                      from {table}
+                     where id = %s
                      limit 1
                     """
-                )
-            elif report_source == "xing":
-                cur.execute(
-                    """
-                    select id, trigger, status, started_at, finished_at, error, stats
-                      from job_scrape.xing_crawl_runs
-                     order by started_at desc nulls last
-                     limit 1
-                    """
+                    .format(table=table),
+                    (report_run_id,),
                 )
             else:
                 cur.execute(
                     """
                     select id, trigger, status, started_at, finished_at, error, stats
-                      from job_scrape.crawl_runs
+                      from {table}
                      order by started_at desc nulls last
                      limit 1
                     """
+                    .format(table=table)
                 )
 
             row = cur.fetchone()
             if not row:
-                print(json.dumps({"status": "no_runs"}, ensure_ascii=False))
+                if report_run_id:
+                    print(
+                        json.dumps(
+                            {
+                                "status": "no_run_for_id",
+                                "report_source": report_source,
+                                "requested_run_id": report_run_id,
+                                "report_scope": report_scope,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                else:
+                    print(
+                        json.dumps(
+                            {
+                                "status": "no_runs",
+                                "report_source": report_source,
+                                "report_scope": report_scope,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
                 return
 
             (run_id, trigger, run_status, started_at, finished_at, error, stats) = row
@@ -296,6 +323,7 @@ def main() -> None:
                 section = _report_linkedin(cur, str(run_id), report_source)
 
     out = {
+        "report_scope": report_scope,
         "latest_crawl_run": {
             "id": str(run_id),
             "trigger": trigger,
