@@ -11,6 +11,9 @@ from job_scrape.skill_extraction import extract_grouped_skills, load_skill_taxon
 from scripts.db import connect
 
 
+COMMIT_EVERY = 50
+
+
 def parse_ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
@@ -31,6 +34,7 @@ def main() -> None:
     path = Path(sys.argv[1])
     counts: Counter[str] = Counter()
     crawl_run_id = None
+    pending_writes = 0
 
     taxonomy = load_skill_taxonomy()
 
@@ -64,8 +68,14 @@ def main() -> None:
                 extracted_skills = None
                 extracted_version = None
                 extracted_at = None
-                if parse_ok and isinstance(job_description, str) and job_description.strip():
-                    extracted_skills = extract_grouped_skills(job_description, taxonomy=taxonomy)
+                if (
+                    parse_ok
+                    and isinstance(job_description, str)
+                    and job_description.strip()
+                ):
+                    extracted_skills = extract_grouped_skills(
+                        job_description, taxonomy=taxonomy
+                    )
                     extracted_version = taxonomy.version
                     extracted_at = datetime.now(timezone.utc)
 
@@ -116,7 +126,9 @@ def main() -> None:
                         json.dumps(criteria),
                         parse_ok,
                         rec.get("last_error") or ("blocked" if blocked else None),
-                        json.dumps(extracted_skills) if extracted_skills is not None else None,
+                        json.dumps(extracted_skills)
+                        if extracted_skills is not None
+                        else None,
                         extracted_version,
                         extracted_at,
                     ),
@@ -151,6 +163,11 @@ def main() -> None:
                         """,
                         (job_id,),
                     )
+
+                pending_writes += 1
+                if pending_writes >= COMMIT_EVERY:
+                    conn.commit()
+                    pending_writes = 0
 
                 counts["detail_rows_upserted"] += 1
                 if parse_ok:

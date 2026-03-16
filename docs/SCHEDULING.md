@@ -21,23 +21,25 @@ Stepstone implementation details and operator runbook:
 ## Workflow
 
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/linkedin-crawl.yml`
-- Schedule: every 12 hours (UTC)
+- Schedule: daily at `01:15 UTC`
 - Manual runs: use `workflow_dispatch`
   - Optional input `sync_search_definitions`:
     - `true`: runs `scripts/sync_search_definitions.py` first
     - `false`: skips sync (assumes `job_scrape.search_definitions` already exists)
+- On success, refreshes dashboard read models via `scripts.refresh_dashboard_read_models`
 
 Stepstone has a dedicated workflow:
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/stepstone-crawl.yml`
-- Schedule: every 12 hours (UTC)
+- Schedule: daily at `03:30 UTC`
 - Manual runs: use `workflow_dispatch`
   - Optional input `sync_search_definitions_stepstone`:
     - `true`: runs `scripts/sync_search_definitions_stepstone.py` first
     - `false`: skips sync and uses existing `job_scrape.stepstone_search_definitions` rows
+- On success, refreshes dashboard read models via `scripts.refresh_dashboard_read_models`
 
 XING has a dedicated workflow (incremental, last 24 hours):
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/xing-crawl-last24h.yml`
-- Schedule: every 12 hours (UTC)
+- Schedule: daily at `05:45 UTC`
 - Incremental filter: `sincePeriod=LAST_24_HOURS`
   - Implemented via env var: `XING_SINCE_PERIOD=LAST_24_HOURS`
   - This applies to discovery URL construction (no DB definition change required).
@@ -45,18 +47,52 @@ XING has a dedicated workflow (incremental, last 24 hours):
   - `MAX_PAGES_PER_SEARCH=20`
   - `MAX_JOBS_DISCOVERED_PER_SEARCH=800`
   - `MAX_JOB_DETAILS_PER_RUN=100`
+  - `XING_DISCOVERY_TIMEOUT_SECONDS=4200`
+  - `XING_DETAILS_TIMEOUT_SECONDS=1800`
 - Notes:
-  - Overlap is intentional (12h schedule with 24h window); DB dedupe makes it safe.
   - XING job detail 410s are treated as expected churn and are marked inactive to avoid endless retries.
+  - Integrity is strictly gated by `scripts.verify_xing_workflow_run` (run-level DB reconciliation + stale auto-heal).
+  - On success, refreshes dashboard read models via `scripts.refresh_dashboard_read_models`.
+
+LinkedIn details has a dedicated workflow:
+- Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/linkedin-details.yml`
+- Schedule: twice daily at `11:15 UTC` and `23:15 UTC`
+- Behavior:
+  - runs `RUN_DISCOVERY=0`, `RUN_DETAILS=1`
+  - keeps detail scraping conservative to reduce blocks
+  - refreshes dashboard read models on success
 
 XING details catch-up has a dedicated workflow (details-only):
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/xing-details-catchup.yml`
-- Schedule: every 3 hours (UTC)
+- Schedule: daily at `08:30 UTC`
 - Behavior:
   - runs `RUN_DISCOVERY=0`, `RUN_DETAILS=1` (no additional discovery load)
   - `MAX_JOB_DETAILS_PER_RUN=100`
-  - `DETAIL_LAST_SEEN_WINDOW_DAYS=2` (bump to `7` if you see backlog growth)
-  - uses `concurrency.cancel-in-progress=true` to avoid overlapping runs
+  - `DETAIL_LAST_SEEN_WINDOW_DAYS=7`
+  - `XING_DETAILS_TIMEOUT_SECONDS=2400`
+  - uses `concurrency.cancel-in-progress=false` to avoid dropping in-flight state
+  - integrity is strictly gated by `scripts.verify_xing_workflow_run`
+  - refreshes dashboard read models on success
+
+## XING Integrity Verification
+
+Both XING workflows run these protections on every execution:
+- `scripts.report_latest_run` with `REPORT_RUN_ID` scoped to the current `crawl_run_id`
+- `scripts.verify_xing_workflow_run --strict 1 --repair-stale 1`
+
+Verifier behavior:
+- auto-heals stale `job_scrape.xing_crawl_runs` rows (`status='running'` older than 180 minutes) and their child `xing_search_runs`
+- re-checks stale state after repair
+- fails the workflow if integrity checks still fail
+
+Manual 14-day diagnostics:
+
+```bash
+python -m scripts.xing_cron_diagnostics --days 14 --strict 1
+```
+
+For failure classes and remediation steps, see:
+- `/Volumes/T7/job-seeking-web-scrape/docs/xing_cron_reconciliation.md`
 
 Lifecycle maintenance has a dedicated workflow:
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/job-lifecycle-maintenance.yml`
@@ -65,18 +101,15 @@ Lifecycle maintenance has a dedicated workflow:
   - Optional input `dry_run`:
     - `true`: computes counts only (no updates/deletes)
     - `false`: applies soft-expire + hard-delete operations
+- On success, refreshes dashboard read models via `scripts.refresh_dashboard_read_models`
 
 Geocode enrichment has a dedicated workflow:
 - Workflow file: `/Volumes/T7/job-seeking-web-scrape/.github/workflows/geocode-enrichment.yml`
 - Triggers:
-  - downstream `workflow_run` on successful completion of:
-    - `LinkedIn Crawl`
-    - `LinkedIn Details`
-    - `Stepstone Crawl`
-  - daily safety net at `03:50 UTC`
+  - daily at `12:50 UTC`
   - manual `workflow_dispatch`
 - Behavior:
-  - always refreshes `job_scrape.jobs_dashboard_map_v`
+  - refreshes dashboard read models on success
   - only calls Geoapify when preflight detects missing cache keys or retryable due rows
   - keeps geocoding isolated from scraper workflows
 
@@ -129,8 +162,7 @@ Behavior:
 - Otherwise: use `r604800`.
 
 Note:
-- Overlap is intentional (e.g. a 12h schedule with a 24h window). DB dedupe on
-  `(source, job_id)` makes overlaps safe.
+- DB dedupe on `(source, job_id)` makes reruns and overlapping fetch windows safe.
 
 ## Lifecycle Maintenance Env Vars
 

@@ -18,7 +18,9 @@ def create_crawl_run(trigger: str) -> str:
     return str(run_id)
 
 
-def finish_crawl_run(run_id: str, *, status: str, stats: dict, error: str | None = None) -> None:
+def finish_crawl_run(
+    run_id: str, *, status: str, stats: dict, error: str | None = None
+) -> None:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -33,6 +35,72 @@ def finish_crawl_run(run_id: str, *, status: str, stats: dict, error: str | None
                 (status, json.dumps(stats), error, run_id),
             )
         conn.commit()
+
+
+def fail_running_search_runs(crawl_run_id: str, *, error: str | None = None) -> int:
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                update job_scrape.xing_search_runs
+                   set status = 'failed',
+                       finished_at = now(),
+                       error = coalesce(error, %s)
+                 where crawl_run_id = %s
+                   and status = 'running'
+                returning 1
+                """,
+                (error, crawl_run_id),
+            )
+            n = len(cur.fetchall())
+        conn.commit()
+    return n
+
+
+def cleanup_stale_running_crawl_runs(
+    *, stale_minutes: int, error: str = "stale watchdog cleanup"
+) -> list[str]:
+    if stale_minutes <= 0:
+        return []
+
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select id
+                  from job_scrape.xing_crawl_runs
+                 where status = 'running'
+                   and started_at < now() - (%s || ' minutes')::interval
+                """,
+                (str(stale_minutes),),
+            )
+            run_ids = [str(r[0]) for r in cur.fetchall()]
+
+            for run_id in run_ids:
+                cur.execute(
+                    """
+                    update job_scrape.xing_search_runs
+                       set status = 'failed',
+                           finished_at = now(),
+                           error = coalesce(error, %s)
+                     where crawl_run_id = %s
+                       and status = 'running'
+                    """,
+                    (error, run_id),
+                )
+                cur.execute(
+                    """
+                    update job_scrape.xing_crawl_runs
+                       set finished_at = now(),
+                           status = 'failed',
+                           error = coalesce(error, %s)
+                     where id = %s
+                    """,
+                    (error, run_id),
+                )
+        conn.commit()
+
+    return run_ids
 
 
 def load_enabled_searches() -> list[dict]:
@@ -90,8 +158,12 @@ def create_search_runs(crawl_run_id: str, searches: list[dict]) -> None:
         conn.commit()
 
 
-def write_discovery_inputs(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> Path:
+def write_discovery_inputs(
+    *, crawl_run_id: str, searches: list[dict], out_jsonl: Path
+) -> Path:
     inputs = {"crawl_run_id": crawl_run_id, "searches": searches}
     inputs_path = out_jsonl.with_suffix(".inputs.json")
-    inputs_path.write_text(json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8")
+    inputs_path.write_text(
+        json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return inputs_path

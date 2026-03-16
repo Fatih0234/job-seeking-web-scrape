@@ -15,6 +15,33 @@ def _log(msg: str) -> None:
     print(f"[run_details_xing {ts}] {msg}", file=sys.stderr)
 
 
+def _recent_blocked_run_within(*, cooldown_minutes: int) -> bool:
+    """If we just got blocked, avoid immediately hammering XING again."""
+    if cooldown_minutes <= 0:
+        return False
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select finished_at
+                  from job_scrape.xing_crawl_runs
+                 where finished_at is not null
+                   and status = 'blocked'
+                 order by finished_at desc
+                 limit 1
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            (finished_at,) = row
+            cur.execute(
+                "select (%s::timestamptz >= now() - (%s || ' minutes')::interval)",
+                (finished_at, str(cooldown_minutes)),
+            )
+            return bool(cur.fetchone()[0])  # type: ignore[index]
+
+
 def select_jobs_for_details(
     *,
     limit: int,
@@ -196,11 +223,29 @@ def main() -> None:
     staleness_days = int(os.getenv("DETAIL_STALENESS_DAYS", "7"))
     blocked_retry_hours = int(os.getenv("DETAIL_BLOCKED_RETRY_HOURS", "24"))
     last_seen_window_days = int(os.getenv("DETAIL_LAST_SEEN_WINDOW_DAYS", "7"))
+    cooldown_minutes = int(os.getenv("DETAIL_COOLDOWN_AFTER_BLOCK_MINUTES", "0"))
     _log(
         "selecting jobs "
         f"limit={limit} staleness_days={staleness_days} blocked_retry_hours={blocked_retry_hours} "
         f"last_seen_window_days={last_seen_window_days}"
     )
+
+    if _recent_blocked_run_within(cooldown_minutes=cooldown_minutes):
+        _log(
+            "recent blocked run detected; skipping this details run "
+            f"(cooldown_minutes={cooldown_minutes})"
+        )
+        print(
+            json.dumps(
+                {
+                    "status": "skipped_backoff",
+                    "crawl_run_id": crawl_run_id,
+                    "counts": {"detail_jobs_selected": 0},
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
 
     jobs = select_jobs_for_details(
         limit=limit,

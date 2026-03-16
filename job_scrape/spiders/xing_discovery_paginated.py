@@ -10,20 +10,8 @@ import scrapy
 from scrapy_playwright.page import PageMethod
 
 from job_scrape.runtime import budgets
+from job_scrape.xing_block_detection import looks_blocked
 from job_scrape.xing import build_search_url, has_show_more, parse_search_results
-
-
-def _looks_blocked(status: int, html: str) -> bool:
-    if status in {403, 429, 503}:
-        return True
-    body_l = html.lower()
-    return (
-        "access denied" in body_l
-        or "verify you are a human" in body_l
-        or "captcha" in body_l
-        or "temporarily blocked" in body_l
-        or "errors.edgesuite.net" in body_l
-    )
 
 
 class XingDiscoveryPaginatedSpider(scrapy.Spider):
@@ -95,7 +83,9 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
         facets = s.get("facets") or {}
         city_id = facets.get("city_id")
         # Allow incremental runs (GitHub Actions) without modifying DB definitions.
-        since_period = (os.getenv("XING_SINCE_PERIOD") or "").strip() or facets.get("since_period")
+        since_period = (os.getenv("XING_SINCE_PERIOD") or "").strip() or facets.get(
+            "since_period"
+        )
         url = build_search_url(
             keywords=s.get("keywords", ""),
             location_text=s.get("location_text"),
@@ -139,7 +129,9 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
                 continue
         return False
 
-    async def parse_search(self, response: scrapy.http.Response, *, search: dict[str, Any]):
+    async def parse_search(
+        self, response: scrapy.http.Response, *, search: dict[str, Any]
+    ):
         sid = str(search["search_definition_id"])
         search_run_id = search.get("search_run_id")
         page = response.meta.get("playwright_page")
@@ -152,7 +144,10 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
             while True:
                 if self._pages_fetched[sid] >= self._b["MAX_PAGES_PER_SEARCH"]:
                     return
-                if self._jobs_discovered[sid] >= self._b["MAX_JOBS_DISCOVERED_PER_SEARCH"]:
+                if (
+                    self._jobs_discovered[sid]
+                    >= self._b["MAX_JOBS_DISCOVERED_PER_SEARCH"]
+                ):
                     return
                 if self._dup_pages[sid] >= self._b["DUPLICATE_PAGE_LIMIT"]:
                     return
@@ -160,7 +155,7 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
                 self._pages_fetched[sid] += 1
                 fetched_at = datetime.now(timezone.utc).isoformat()
 
-                blocked = _looks_blocked(response.status, current_html)
+                blocked = looks_blocked(status=response.status, body=current_html)
                 if blocked:
                     self._block_streak[sid] += 1
                     yield {
@@ -178,7 +173,10 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
                     }
                     if self._block_streak[sid] >= self._b["CIRCUIT_BREAKER_BLOCKS"]:
                         self._blocked[sid] = True
-                        self.logger.error("Blocked detected for search %s; stopping (circuit breaker).", sid)
+                        self.logger.error(
+                            "Blocked detected for search %s; stopping (circuit breaker).",
+                            sid,
+                        )
                     return
 
                 self._block_streak[sid] = 0
@@ -237,7 +235,10 @@ class XingDiscoveryPaginatedSpider(scrapy.Spider):
 
                 if self._pages_fetched[sid] >= self._b["MAX_PAGES_PER_SEARCH"]:
                     return
-                if self._jobs_discovered[sid] >= self._b["MAX_JOBS_DISCOVERED_PER_SEARCH"]:
+                if (
+                    self._jobs_discovered[sid]
+                    >= self._b["MAX_JOBS_DISCOVERED_PER_SEARCH"]
+                ):
                     return
                 if self._dup_pages[sid] >= self._b["DUPLICATE_PAGE_LIMIT"]:
                     return

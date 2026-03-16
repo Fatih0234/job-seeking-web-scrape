@@ -9,21 +9,8 @@ import scrapy
 from scrapy_playwright.page import PageMethod
 
 from job_scrape.runtime import budgets
+from job_scrape.xing_block_detection import looks_blocked
 from job_scrape.xing_detail import parse_job_detail
-
-
-def _looks_blocked(response: scrapy.http.Response) -> bool:
-    if response.status in {403, 429, 503}:
-        return True
-
-    body_l = response.text.lower()
-    return (
-        "access denied" in body_l
-        or "errors.edgesuite.net" in body_l
-        or "verify you are a human" in body_l
-        or "captcha" in body_l
-        or "temporarily blocked" in body_l
-    )
 
 
 class XingJobDetailBatchSpider(scrapy.Spider):
@@ -91,12 +78,14 @@ class XingJobDetailBatchSpider(scrapy.Spider):
                 },
             )
 
-    async def parse_detail(self, response: scrapy.http.Response, *, job: dict[str, Any]):
+    async def parse_detail(
+        self, response: scrapy.http.Response, *, job: dict[str, Any]
+    ):
         fetched_at = datetime.now(timezone.utc).isoformat()
         page = response.meta.get("playwright_page")
 
         try:
-            blocked = _looks_blocked(response)
+            blocked = looks_blocked(status=response.status, body=(response.text or ""))
             if blocked:
                 self._block_streak += 1
                 yield {
@@ -123,7 +112,9 @@ class XingJobDetailBatchSpider(scrapy.Spider):
                 }
                 if self._block_streak >= self._block_streak_limit:
                     try:
-                        self.crawler.engine.close_spider(self, reason="blocked_circuit_breaker")
+                        self.crawler.engine.close_spider(
+                            self, reason="blocked_circuit_breaker"
+                        )
                     except Exception:
                         pass
                 return
@@ -147,13 +138,18 @@ class XingJobDetailBatchSpider(scrapy.Spider):
                 except Exception:
                     pass
 
-            if critical_missing and self._failure_debug_count < self._failure_debug_limit:
+            if (
+                critical_missing
+                and self._failure_debug_count < self._failure_debug_limit
+            ):
                 out_dir = Path("output") / "xing_detail_failures"
                 out_dir.mkdir(parents=True, exist_ok=True)
-                suffix = f"{job.get('job_id','unknown')}_pw"
+                suffix = f"{job.get('job_id', 'unknown')}_pw"
                 (out_dir / f"{suffix}.html").write_text(html, encoding="utf-8")
                 if page:
-                    await page.screenshot(path=str(out_dir / f"{suffix}.png"), full_page=True)
+                    await page.screenshot(
+                        path=str(out_dir / f"{suffix}.png"), full_page=True
+                    )
                 self._failure_debug_count += 1
 
             yield {
@@ -216,7 +212,9 @@ class XingJobDetailBatchSpider(scrapy.Spider):
                 "work_model": None,
                 "job_description": None,
                 "criteria": {
-                    "http_status": getattr(getattr(failure.value, "response", None), "status", None),
+                    "http_status": getattr(
+                        getattr(failure.value, "response", None), "status", None
+                    ),
                     "request_failure": True,
                 },
             }
