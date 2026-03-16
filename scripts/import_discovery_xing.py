@@ -9,6 +9,9 @@ from pathlib import Path
 from scripts.db import connect
 
 
+COMMIT_EVERY = 50
+
+
 def parse_ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
@@ -23,6 +26,7 @@ def main() -> None:
     blocked_by_search_run: dict[str, bool] = defaultdict(bool)
 
     crawl_run_id = None
+    pending_writes = 0
 
     with connect() as conn:
         with conn.cursor() as cur:
@@ -78,7 +82,15 @@ def main() -> None:
                       expired_at = null,
                       expire_reason = null
                     """,
-                    (job_id, job_url, is_external, json.dumps(list_preview), scraped_at, scraped_at, srid),
+                    (
+                        job_id,
+                        job_url,
+                        is_external,
+                        json.dumps(list_preview),
+                        scraped_at,
+                        scraped_at,
+                        srid,
+                    ),
                 )
 
                 if srid:
@@ -88,8 +100,19 @@ def main() -> None:
                         values (%s, %s, %s, %s, %s)
                         on conflict do nothing
                         """,
-                        (srid, job_id, int(rec.get("rank", 0)), int(rec.get("page_start", 0)), scraped_at),
+                        (
+                            srid,
+                            job_id,
+                            int(rec.get("rank", 0)),
+                            int(rec.get("page_start", 0)),
+                            scraped_at,
+                        ),
                     )
+
+                pending_writes += 1
+                if pending_writes >= COMMIT_EVERY:
+                    conn.commit()
+                    pending_writes = 0
 
             for srid, pages in pages_by_search_run.items():
                 cur.execute(

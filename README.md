@@ -232,6 +232,18 @@ source .venv/bin/activate
 python -m scripts.create_dashboard_view
 ```
 
+### Target jobs: create/update student + internship + part-time views
+```bash
+source .venv/bin/activate
+python -m scripts.create_target_job_views
+```
+
+### Working-student app views: create/update the conservative candidate read models
+```bash
+source .venv/bin/activate
+python -m scripts.create_working_student_app_views
+```
+
 ### Dashboard: monitor unparsed posted-time formats
 ```bash
 source .venv/bin/activate
@@ -256,6 +268,11 @@ source .venv/bin/activate
 python -m scripts.create_dashboard_map_view
 ```
 
+### Refresh all dashboard + target-job read models
+```bash
+source .venv/bin/activate
+python -m scripts.refresh_dashboard_read_models
+```
 ### Map: scheduled geocode orchestration (GitHub Actions)
 - Workflow: `.github/workflows/geocode-enrichment.yml`
 - Runs daily at `12:50 UTC` and via manual `workflow_dispatch`.

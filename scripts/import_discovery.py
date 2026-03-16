@@ -20,13 +20,13 @@ def main() -> None:
     path = Path(sys.argv[1])
     pages_by_search_run: dict[str, set[int]] = defaultdict(set)
     discovered_by_search_run: dict[str, int] = defaultdict(int)
-    blocked_by_search_run: dict[str, bool] = defaultdict(bool)
+    blocked_pages_by_search_run: dict[str, int] = defaultdict(int)
 
     crawl_run_id = None
 
     with connect() as conn:
         with conn.cursor() as cur:
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in open(path, encoding="utf-8"):
                 if not line.strip():
                     continue
                 rec = json.loads(line)
@@ -38,7 +38,7 @@ def main() -> None:
                     if srid:
                         pages_by_search_run[srid].add(int(rec.get("page_start", 0)))
                         if rec.get("blocked"):
-                            blocked_by_search_run[srid] = True
+                            blocked_pages_by_search_run[srid] += 1
                     continue
 
                 if rtype != "job_discovered":
@@ -87,6 +87,9 @@ def main() -> None:
 
             # Update search_runs
             for srid, pages in pages_by_search_run.items():
+                bp = blocked_pages_by_search_run.get(srid, 0)
+                tp = max(len(pages), 1)
+                is_blocked = bp > 0 and (bp / tp) > 0.50
                 cur.execute(
                     """
                     update job_scrape.search_runs
@@ -98,19 +101,19 @@ def main() -> None:
                      where id = %s
                     """,
                     (
-                        "blocked" if blocked_by_search_run.get(srid) else "success",
+                        "blocked" if is_blocked else "success",
                         len(pages),
                         discovered_by_search_run.get(srid, 0),
-                        blocked_by_search_run.get(srid, False),
+                        is_blocked,
                         srid,
                     ),
                 )
 
         conn.commit()
 
-    status = "success"
-    if any(blocked_by_search_run.values()):
-        status = "blocked"
+    total_pages = sum(len(p) for p in pages_by_search_run.values()) or 1
+    total_blocked = sum(blocked_pages_by_search_run.values())
+    status = "blocked" if total_blocked > 0 and (total_blocked / total_pages) > 0.50 else "success"
 
     out = {
         "status": status,
@@ -119,7 +122,7 @@ def main() -> None:
             srid: {
                 "pages_fetched": len(pages_by_search_run[srid]),
                 "jobs_discovered": discovered_by_search_run.get(srid, 0),
-                "blocked": blocked_by_search_run.get(srid, False),
+                "blocked_pages": blocked_pages_by_search_run.get(srid, 0),
             }
             for srid in pages_by_search_run.keys()
         },

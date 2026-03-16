@@ -182,9 +182,23 @@ def main() -> None:
         _apply_discovery_tpr_policy(searches=searches)
 
         out_jsonl = Path("output") / f"discovery_{crawl_run_id}.jsonl"
-        run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
 
-        stats = import_results(out_jsonl)
+        spider_error: RuntimeError | None = None
+        try:
+            run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
+        except RuntimeError as e:
+            spider_error = e
+            _log(f"spider failed ({e}); will attempt to salvage partial results")
+
+        if out_jsonl.exists() and out_jsonl.stat().st_size > 0:
+            stats = import_results(out_jsonl)
+        elif spider_error is not None:
+            raise spider_error
+        else:
+            stats = {"status": "success", "counts": {}}
+
+        if spider_error is not None:
+            stats.setdefault("spider_error", str(spider_error))
         print(json.dumps({"crawl_run_id": crawl_run_id, **stats}, ensure_ascii=False))
         return
 
@@ -201,9 +215,23 @@ def main() -> None:
         _apply_discovery_tpr_policy(searches=searches)
 
         out_jsonl = Path("output") / f"discovery_{crawl_run_id}.jsonl"
-        run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
 
-        stats = import_results(out_jsonl)
+        spider_error: RuntimeError | None = None
+        try:
+            run_spider(crawl_run_id=crawl_run_id, searches=searches, out_jsonl=out_jsonl)
+        except RuntimeError as e:
+            spider_error = e
+            _log(f"spider failed ({e}); will attempt to salvage partial results")
+
+        if out_jsonl.exists() and out_jsonl.stat().st_size > 0:
+            stats = import_results(out_jsonl)
+        elif spider_error is not None:
+            raise spider_error
+        else:
+            stats = {"status": "success", "counts": {}}
+
+        if spider_error is not None:
+            stats.setdefault("spider_error", str(spider_error))
         finish_crawl_run(crawl_run_id, status=stats.get("status", "success"), stats=stats, error=stats.get("error"))
         print(json.dumps({"crawl_run_id": crawl_run_id, **stats}, ensure_ascii=False))
     except Exception as e:

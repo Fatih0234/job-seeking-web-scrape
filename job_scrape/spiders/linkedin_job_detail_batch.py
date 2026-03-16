@@ -10,6 +10,7 @@ import scrapy
 from scrapy_playwright.page import PageMethod
 
 from job_scrape.linkedin_detail import parse_job_detail
+from job_scrape.ua import get_user_agent
 
 
 def _looks_blocked(response: scrapy.http.Response) -> bool:
@@ -80,13 +81,7 @@ class LinkedInJobDetailBatchSpider(scrapy.Spider):
 
     def _guest_headers(self) -> dict[str, str]:
         # Keep stable-ish headers to look like a normal browser, without doing anything stateful.
-        ua = (os.getenv("LINKEDIN_GUEST_USER_AGENT") or "").strip()
-        if not ua:
-            ua = (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/121.0.0.0 Safari/537.36"
-            )
+        ua = get_user_agent()
         accept_lang = (os.getenv("LINKEDIN_ACCEPT_LANGUAGE") or "").strip() or "en-US,en;q=0.9,de;q=0.8"
         return {
             "User-Agent": ua,

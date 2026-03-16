@@ -121,9 +121,9 @@ jobs:
         run: |
           echo "No pending geocode work. Skipping Geoapify call."
 
-      - name: Refresh map view
+      - name: Refresh dashboard read models
         run: |
-          python -m scripts.create_dashboard_map_view
+          python -m scripts.refresh_dashboard_read_models
 
       - name: Emit cache and coverage summary
         run: |

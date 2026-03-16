@@ -85,7 +85,13 @@ OPTIONAL_INDEX_BY_TABLE: tuple[tuple[str, str], ...] = (
 
 
 def _is_timeout_error(err: Exception) -> bool:
-    return isinstance(err, psycopg.errors.QueryCanceled)
+    return isinstance(
+        err,
+        (
+            psycopg.errors.QueryCanceled,
+            psycopg.errors.LockNotAvailable,
+        ),
+    )
 
 
 def _table_exists(cur: psycopg.Cursor, table_name: str) -> bool:

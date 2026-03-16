@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+from typing import Optional
 
 from scripts.db import connect
+
+logger = logging.getLogger(__name__)
 
 
 def create_crawl_run(trigger: str) -> str:
@@ -18,7 +22,9 @@ def create_crawl_run(trigger: str) -> str:
     return str(run_id)
 
 
-def finish_crawl_run(run_id: str, *, status: str, stats: dict, error: str | None = None) -> None:
+def finish_crawl_run(
+    run_id: str, *, status: str, stats: dict, error: str | None = None
+) -> None:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -55,7 +61,9 @@ def fail_running_search_runs(crawl_run_id: str, *, error: str | None = None) -> 
     return n
 
 
-def cleanup_stale_running_crawl_runs(*, stale_minutes: int, error: str = "stale watchdog cleanup") -> list[str]:
+def cleanup_stale_running_crawl_runs(
+    *, stale_minutes: int, error: str = "stale watchdog cleanup"
+) -> list[str]:
     if stale_minutes <= 0:
         return []
 
@@ -154,8 +162,80 @@ def create_search_runs(crawl_run_id: str, searches: list[dict]) -> None:
         conn.commit()
 
 
-def write_discovery_inputs(*, crawl_run_id: str, searches: list[dict], out_jsonl: Path) -> Path:
+def write_discovery_inputs(
+    *, crawl_run_id: str, searches: list[dict], out_jsonl: Path
+) -> Path:
     inputs = {"crawl_run_id": crawl_run_id, "searches": searches}
     inputs_path = out_jsonl.with_suffix(".inputs.json")
-    inputs_path.write_text(json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8")
+    inputs_path.write_text(
+        json.dumps(inputs, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return inputs_path
+
+
+def compute_discovery_age_days(
+    *, default_age_days: int = 1, widen_after_hours: float = 36
+) -> Optional[int]:
+    """Choose an ``age_days`` filter based on crawl-run history.
+
+    Mirrors LinkedIn's dynamic TPR policy so the discovery window auto-widens
+    when recent runs failed or were blocked:
+
+    * **First-ever run** (no finished history) -> ``None`` (no age filter).
+    * **Recent success** within *widen_after_hours* -> *default_age_days* (1).
+    * **Stale / only failures** -> 7 (widen to one-week window).
+    """
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select finished_at, status
+                  from job_scrape.stepstone_crawl_runs
+                 where finished_at is not null
+                 order by finished_at desc
+                 limit 1
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                logger.info(
+                    "compute_discovery_age_days: no finished runs -> None (backfill)"
+                )
+                return None
+
+            cur.execute(
+                """
+                select finished_at
+                  from job_scrape.stepstone_crawl_runs
+                 where finished_at is not null
+                   and status = 'success'
+                 order by finished_at desc
+                 limit 1
+                """
+            )
+            success_row = cur.fetchone()
+            if not success_row:
+                logger.info("compute_discovery_age_days: no successful runs -> 7")
+                return 7
+
+            cur.execute(
+                "select extract(epoch from now() - %s::timestamptz) / 3600.0",
+                (success_row[0],),
+            )
+            hours_since: float = float(cur.fetchone()[0])  # type: ignore[index]
+
+            if hours_since <= widen_after_hours:
+                logger.info(
+                    "compute_discovery_age_days: last success %.1fh ago (<= %.1fh) -> %d",
+                    hours_since,
+                    widen_after_hours,
+                    default_age_days,
+                )
+                return default_age_days
+
+            logger.info(
+                "compute_discovery_age_days: last success %.1fh ago (> %.1fh) -> 7",
+                hours_since,
+                widen_after_hours,
+            )
+            return 7

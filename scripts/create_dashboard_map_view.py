@@ -6,6 +6,8 @@ from scripts.db import connect
 SQL = """
 create schema if not exists job_scrape;
 
+set statement_timeout = '30min';
+
 -- Map-only location expansion layer:
 -- - Splits multi-city job_location strings into city tokens (capped)
 -- - Emits a remote token when job looks remote-like (or platform indicates remote/hybrid)
