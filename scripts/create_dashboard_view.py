@@ -6,6 +6,8 @@ from scripts.db import connect
 SQL = """
 create schema if not exists job_scrape;
 
+set statement_timeout = '30min';
+
 create or replace view job_scrape.jobs_dashboard_v as
 with base_rows as (
   select

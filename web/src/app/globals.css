@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+
+  --color-background-light: var(--gw-bg);
+  --color-background-dark: var(--gw-bg);
+  --color-surface-light: var(--gw-surface);
+  --color-surface-dark: var(--gw-surface);
+
+  --color-text-light: var(--gw-text);
+  --color-text-dark: var(--gw-text);
+  --color-subtext-light: var(--gw-subtext);
+  --color-subtext-dark: var(--gw-subtext);
+
+  --color-border-light: var(--gw-border);
+  --color-border-dark: var(--gw-border);
+
+  --color-linkedin: #0077b5;
+  --color-xing: #006567;
+  --color-stepstone: #cc0033;
+}
+
+:root {
+  --gw-bg: #f3f4f6;
+  --gw-surface: #ffffff;
+  --gw-text: #111827;
+  --gw-subtext: #6b7280;
+  --gw-border: #e5e7eb;
+}
+
+.dark {
+  --gw-bg: #0f172a;
+  --gw-surface: #1e293b;
+  --gw-text: #f9fafb;
+  --gw-subtext: #94a3b8;
+  --gw-border: #334155;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Map tile styling (used via TileLayer className="map-tiles") */
+.map-tiles {
+  filter: grayscale(100%) invert(0%) contrast(90%);
+}
+.dark .map-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
+/* Scrollbar */
+.gw-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.gw-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gw-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 20px;
+}
+.dark .gw-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #475569;
+}
